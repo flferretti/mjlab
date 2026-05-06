@@ -1,0 +1,107 @@
+<mujoco model="lowerbodyqdd">
+  <compiler angle="radian" meshdir="meshes/simmechanics" />
+  <asset>
+    <mesh name="sim_qdd_torso" content_type="model/stl" file="sim_qdd_torso.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_l_hip" content_type="model/stl" file="sim_qdd_l_hip.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_r_hip" content_type="model/stl" file="sim_qdd_r_hip.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_r_hip_adduction" content_type="model/stl" file="sim_qdd_r_hip_adduction.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_r_upperleg" content_type="model/stl" file="sim_qdd_r_upperleg.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_r_lowerleg_jd10" content_type="model/stl" file="sim_qdd_r_lowerleg_jd10.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_r_ankle_jd10" content_type="model/stl" file="sim_qdd_r_ankle_jd10.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_r_foot_roll" content_type="model/stl" file="sim_qdd_r_foot_roll.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_l_hip_adduction" content_type="model/stl" file="sim_qdd_l_hip_adduction.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_l_upperleg" content_type="model/stl" file="sim_qdd_l_upperleg.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_l_lowerleg_jd10" content_type="model/stl" file="sim_qdd_l_lowerleg_jd10.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_l_ankle_jd10" content_type="model/stl" file="sim_qdd_l_ankle_jd10.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_qdd_l_foot_roll" content_type="model/stl" file="sim_qdd_l_foot_roll.stl" scale="0.001 0.001 0.001" />
+  </asset>
+  <worldbody>
+    <body name="root_link" pos="0.0746 0.00769995 0.0860943" quat="0.707107 -3.71966e-05 -0.707107 3.71966e-05">
+      <inertial pos="0.000132371 -2.1298e-05 0.171376" quat="0.999943 0.00024145 -0.0106307 -0.000507829" mass="7.12829" diaginertia="0.122466 0.087822 0.0612802" />
+      <joint name="waist_imu_0_fixed_joint" type="free" />
+      <geom type="mesh" mesh="sim_qdd_torso" contype="0" conaffinity="0" />
+      <body name="l_hip_1" pos="-0.0001 0.0431 0">
+        <inertial pos="-0.0491231 0.0381503 0.000322927" quat="0.584487 0.551591 0.44164 0.398843" mass="5.36254" diaginertia="0.0302079 0.0289336 0.00943549" />
+        <joint name="l_hip_pitch" pos="0 0 0" axis="0 -1 0" range="-0.767945 1.91986" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.08" />
+        <geom type="mesh" mesh="sim_qdd_l_hip" contype="1" conaffinity="6" />
+        <body name="l_hip_2" pos="-0.0909 0.063 0">
+          <inertial pos="0.0820786 0.00527463 -0.057901" quat="0.438332 0.535884 0.593326 0.410679" mass="0.991982" diaginertia="0.00525401 0.0041912 0.00227255" />
+          <joint name="l_hip_roll" pos="0 0 0" axis="1 0 0" range="-0.349066 1.93732" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.08" />
+          <geom type="mesh" mesh="sim_qdd_l_hip_adduction" contype="1" conaffinity="6" />
+          <body name="l_upper_leg" pos="0.0804 0 -0.126">
+            <inertial pos="0.00520298 0.0136829 -0.140186" quat="0.671612 0.0220242 -0.0647922 0.737735" mass="4.95464" diaginertia="0.054484 0.0539106 0.00896296" />
+            <joint name="l_hip_yaw" pos="0 0 0" axis="0 0 1" range="-1.41372 1.41372" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.02" />
+            <geom type="mesh" mesh="sim_qdd_l_upperleg" contype="1" conaffinity="6" />
+            <body name="l_lower_leg" pos="0.0105 0 -0.2251">
+              <inertial pos="-0.000354006 0.010419 -0.211191" quat="0.99995 -0.00888951 0.000875035 0.00451465" mass="2.97521" diaginertia="0.0580704 0.0561991 0.00536761" />
+              <joint name="l_knee" pos="0 0 0" axis="0 -1 0" range="-1.8326 0.122173" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.08" />
+              <geom type="mesh" mesh="sim_qdd_l_lowerleg_jd10" contype="1" conaffinity="6" />
+              <body name="l_ankle" pos="0 0 -0.321">
+                <inertial pos="0.0108253 -0.0119822 -0.0252515" quat="0.288877 0.627534 0.36142 0.6262" mass="0.46684" diaginertia="0.00148538 0.00137737 0.000404092" />
+                <joint name="l_ankle_pitch" pos="0 0 0" axis="0 1 0" range="-1.309 0.785398" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.02" />
+                <geom type="mesh" mesh="sim_qdd_l_ankle_jd10" contype="1" conaffinity="6" />
+                <body name="l_foot_roll" pos="0.0795 0.0048 -0.035" quat="1 0 0 0">
+                  <inertial pos="-0.0223475 0.000103843 -0.0234727" quat="0.563278 0.426917 0.429114 0.562424" mass="1.38398" diaginertia="0.00764362 0.00702023 0.00186511" />
+                  <joint name="l_ankle_roll" pos="0 0 0" axis="1 0 0" range="-0.436332 0.436332" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.0042" />
+                  <geom type="mesh" mesh="sim_qdd_l_foot_roll" contype="1" conaffinity="6" />
+                  <geom size="0.11 0.0425 0.0025" pos="-0.05462 0 -0.0677" quat="1 0 0 0" type="box" />
+                  <site name="l_sole" pos="-0.04337000000000003 -8.641698467926063e-16 -0.07020000000000026" quat="1.0 -3.747002708109908e-16 2.1013663772761515e-16 2.2837238799239756e-15" />
+                  <site name="l_foot" pos="-0.04337000000000003 -8.604228440844963e-16 -0.06520000000000026" quat="1.0 -3.7470027081099073e-16 2.1013663772761515e-16 2.2837238799239756e-15" />
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="r_hip_1" pos="0 -0.0431 0">
+        <inertial pos="-0.0493196 -0.0381597 0.000197591" quat="0.408218 0.43215 0.558731 0.578295" mass="5.36254" diaginertia="0.0301636 0.0288941 0.00942381" />
+        <joint name="r_hip_pitch" pos="0 0 0" axis="0 -1 0" range="-0.767945 1.91986" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.08" />
+        <geom type="mesh" mesh="sim_qdd_r_hip" contype="4" conaffinity="3" />
+        <body name="r_hip_2" pos="-0.091 -0.063 0" quat="1 0 0 0">
+          <inertial pos="0.0824456 -0.00543426 -0.0581796" quat="0.412052 0.592627 0.533018 0.441473" mass="0.991982" diaginertia="0.0052193 0.00416882 0.0022745" />
+          <joint name="r_hip_roll" pos="0 0 0" axis="-1 0 0" range="-0.349066 1.93732" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.08" />
+          <geom type="mesh" mesh="sim_qdd_r_hip_adduction" contype="4" conaffinity="3" />
+          <body name="r_upper_leg" pos="0.0804 0 -0.126">
+            <inertial pos="0.00515196 -0.0136155 -0.140683" quat="0.712231 -0.0638469 0.0252678 0.698579" mass="4.95464" diaginertia="0.0540659 0.0535174 0.00895379" />
+            <joint name="r_hip_yaw" pos="0 0 0" axis="0 0 -1" range="-1.41372 1.41372" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.02" />
+            <geom type="mesh" mesh="sim_qdd_r_upperleg" contype="4" conaffinity="3" />
+            <body name="r_lower_leg" pos="0.0105 0 -0.2251">
+              <inertial pos="0.000196335 -0.01043 -0.211192" quat="0.999913 0.00895021 -0.000618801 0.0096244" mass="2.97521" diaginertia="0.0580681 0.0561974 0.00536665" />
+              <joint name="r_knee" pos="0 0 0" axis="0 -1 0" range="-1.8326 0.122173" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.08" />
+              <geom type="mesh" mesh="sim_qdd_r_lowerleg_jd10" contype="4" conaffinity="3" />
+              <body name="r_ankle" pos="0 0 -0.321">
+                <inertial pos="0.0112531 0.0119245 -0.0252003" quat="0.625837 0.361674 0.627485 0.289452" mass="0.466765" diaginertia="0.00148371 0.00137546 0.000404268" />
+                <joint name="r_ankle_pitch" pos="0 0 0" axis="0 1 0" range="-1.309 0.785398" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.02" />
+                <geom type="mesh" mesh="sim_qdd_r_ankle_jd10" contype="4" conaffinity="3" />
+                <body name="r_foot_roll" pos="0.0795 -0.0048 -0.035">
+                  <inertial pos="-0.0225155 0.000107418 -0.0234596" quat="0.562972 0.427455 0.429803 0.561795" mass="1.38398" diaginertia="0.00767263 0.00704419 0.00187022" />
+                  <joint name="r_ankle_roll" pos="0 0 0" axis="-1 0 0" range="-0.436332 0.436332" actuatorfrcrange="-1000000000 1000000000" damping="2" armature="0.0042" />
+                  <geom type="mesh" mesh="sim_qdd_r_foot_roll" contype="4" conaffinity="3" />
+                  <geom size="0.11 0.0425 0.0025" pos="-0.05462 0 -0.0677" quat="1 0 0 0" type="box" />
+                  <site name="r_foot" pos="-0.04336999999999956 -2.7755575615628914e-17 -0.06520000000000048" quat="1.0 4.3733475657400535e-31 -2.2109949536705175e-16 2.0842702563861333e-15" />
+                  <site name="r_sole" pos="-0.04336999999999957 -2.775557561562893e-17 -0.07020000000000048" quat="1.0 4.3733475657400535e-31 -2.2109949536705175e-16 2.0842702563861333e-15" />
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <site name="imu_frame" pos="0.07459999999977064 0.0076999515154014585 0.08609428492897564" quat="0.7071067802087908 -3.7196645730708244e-05 -0.7071067802076119 3.7196645275072715e-05" />
+      <site name="weight2" pos="8.335809985296834e-32 -0.094 0.2749999999999999" quat="1.0 -2.220446049250313e-16 2.4354232038360087e-46 -1.0968171033285308e-30" />
+      <site name="weight3" pos="4.957613307044959e-31 0.094 0.27499999999999986" quat="1.0 -2.220446049250313e-16 2.4354232038360087e-46 -1.0968171033285308e-30" />
+      <site name="real_sense_depth" pos="0.15276 0.0175 0.134" quat="-0.24184476264797533 0.6644630243886748 -0.6644630243886746 0.2418447626479753" />
+      <camera name="waist_depth_camera" pos="0.15276 0.0175 0.134" quat="-0.6644630243886749 -0.24184476264797533 0.2418447626479753 0.6644630243886747" fovy="60.0" />
+      <site name="weight4" pos="5.791194305574643e-31 0.132 0.27499999999999986" quat="1.0 -2.220446049250313e-16 2.4354232038360087e-46 -1.0968171033285308e-30" />
+      <site name="base_link" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+      <site name="real_sense_rgb" pos="0.1527 -0.0115 0.134" quat="-0.24184476264797533 0.6644630243886748 -0.6644630243886746 0.2418447626479753" />
+      <site name="weight1" pos="0.0 -0.132 0.2749999999999999" quat="1.0 -2.220446049250313e-16 2.4354232038360087e-46 -1.0968171033285308e-30" />
+    </body>
+  </worldbody>
+  <sensor>
+    <framequat name="imu_frame_framequat" objtype="site" objname="imu_frame" />
+    <gyro name="imu_ang_vel" site="imu_frame" />
+    <velocimeter name="imu_lin_vel" site="imu_frame" />
+    <accelerometer name="imu_lin_acc" site="imu_frame" />
+    <subtreeangmom name="root_angmom" body="root_link" />
+  </sensor>
+</mujoco>

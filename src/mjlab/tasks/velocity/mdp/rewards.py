@@ -24,6 +24,43 @@ if TYPE_CHECKING:
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 
 
+def track_lin_vel_xy_exp(
+  env: ManagerBasedRlEnv,
+  std: float,
+  command_name: str,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Reward for tracking commanded XY linear velocity (no Z penalty).
+
+  Matches IsaacLab's ``track_lin_vel_xy_exp``.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+  lin_vel_error = torch.sum(
+    torch.square(command[:, :2] - asset.data.root_link_lin_vel_b[:, :2]),
+    dim=1,
+  )
+  return torch.exp(-lin_vel_error / std**2)
+
+
+def track_ang_vel_z_exp(
+  env: ManagerBasedRlEnv,
+  std: float,
+  command_name: str,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Reward for tracking commanded yaw angular velocity (no XY penalty).
+
+  Matches IsaacLab's ``track_ang_vel_z_exp``.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+  ang_vel_error = torch.square(command[:, 2] - asset.data.root_link_ang_vel_b[:, 2])
+  return torch.exp(-ang_vel_error / std**2)
+
+
 def track_linear_velocity(
   env: ManagerBasedRlEnv,
   std: float,
@@ -464,3 +501,183 @@ class variable_posture:
     error_squared = torch.square(current_joint_pos - desired_joint_pos)
 
     return torch.exp(-torch.mean(error_squared / (std**2), dim=1))
+
+
+# ---------------------------------------------------------------------------
+# gb-rl-locomotion reward functions (ported for QDD alignment)
+# ---------------------------------------------------------------------------
+
+
+def applied_torque_over_value(
+  env: ManagerBasedRlEnv,
+  value: float,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Penalize joint torques exceeding a rated value.
+
+  Uses joint-space generalized force (``qfrc_actuator``).
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  torque = asset.data.qfrc_actuator[:, asset_cfg.joint_ids]
+  excess = torch.clamp(torch.abs(torque) - value, min=0.0)
+  return torch.sum(excess, dim=1)
+
+
+class electrical_power_cost_detailed:
+  """Penalize electrical power draw using a detailed motor model.
+
+  Matches gb-rl-locomotion's ``electrical_power_cost`` reward.
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    asset: Entity = env.scene[cfg.params["asset_cfg"].name]
+    joint_ids, _ = asset.find_joints(cfg.params["asset_cfg"].joint_names)
+    self._joint_ids = torch.tensor(joint_ids, device=env.device, dtype=torch.long)
+
+    def _to_tensor(v: float | list[float]) -> torch.Tensor:
+      if isinstance(v, (int, float)):
+        vals: list[float] = [float(v)] * len(joint_ids)
+      else:
+        vals = v
+      return torch.tensor(vals, device=env.device, dtype=torch.float32)
+
+    self._ktau = _to_tensor(cfg.params["ktau"])
+    self._gear_ratio = _to_tensor(cfg.params["gear_ratio"])
+    self._resistance = _to_tensor(cfg.params["resistance"])
+    self._eta = _to_tensor(cfg.params.get("gearbox_efficiency", 0.95))
+    self._power_limit = float(cfg.params.get("power_limit", 1000.0))
+    self._power_ref = float(cfg.params.get("power_ref", 500.0))
+    self._aux_power = float(cfg.params.get("aux_power", 100.0))
+    self._peak_importance = float(cfg.params.get("peak_importance", 1.0))
+    self._energy_importance = float(cfg.params.get("energy_importance", 0.2))
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg,
+    ktau,
+    gear_ratio,
+    resistance,
+    gearbox_efficiency=0.95,
+    power_limit=1000.0,
+    power_ref=500.0,
+    aux_power=100.0,
+    peak_importance=1.0,
+    energy_importance=0.2,
+  ) -> torch.Tensor:
+    asset: Entity = env.scene[asset_cfg.name]
+    tau_joint = asset.data.qfrc_actuator[:, self._joint_ids]
+    omega_joint = asset.data.joint_vel[:, self._joint_ids]
+
+    tau_motor = tau_joint / (self._gear_ratio * self._eta)
+    i_q = tau_motor / self._ktau
+    p_cu = 1.5 * self._resistance * i_q**2
+    p_mech = tau_joint * omega_joint / self._eta
+    p_elec = torch.clamp(p_mech, min=0.0) + p_cu
+    p_bus = torch.sum(p_elec, dim=1) + self._aux_power
+
+    peak_term = torch.square(torch.clamp(p_bus / self._power_limit - 1.0, min=0.0))
+    energy_term = p_bus / self._power_ref
+
+    return self._peak_importance * peak_term + self._energy_importance * energy_term
+
+
+def no_fly_backward_penalty(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  sensor_name: str,
+  threshold: float = 1.0,
+  cmd_threshold: float = -0.1,
+) -> torch.Tensor:
+  """Penalize both feet being airborne when walking backward."""
+  contact_sensor: ContactSensor = env.scene[sensor_name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+  assert contact_sensor.data.force is not None
+  force_mag = torch.norm(contact_sensor.data.force, dim=-1)  # [B, N]
+  in_contact = force_mag > threshold  # [B, N]
+  both_airborne = (~in_contact).all(dim=1).float()  # [B]
+  backward_mask = (command[:, 0] < cmd_threshold).float()
+  return both_airborne * backward_mask
+
+
+def lin_vel_z_backward_l2(
+  env: ManagerBasedRlEnv,
+  command_name: str,
+  cmd_threshold: float = -0.1,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Penalize vertical velocity when walking backward."""
+  asset: Entity = env.scene[asset_cfg.name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+  vz = asset.data.root_link_lin_vel_b[:, 2]
+  backward_mask = (command[:, 0] < cmd_threshold).float()
+  return torch.square(vz) * backward_mask
+
+
+_GRAVITY_VEC = None
+
+
+def feet_orientation_contact(
+  env: ManagerBasedRlEnv,
+  sensor_name: str,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Penalize non-flat foot orientation when in contact with ground."""
+  global _GRAVITY_VEC
+  if _GRAVITY_VEC is None or _GRAVITY_VEC.device != env.device:
+    _GRAVITY_VEC = torch.tensor(
+      [0.0, 0.0, -1.0], device=env.device, dtype=torch.float32
+    )
+
+  asset: Entity = env.scene[asset_cfg.name]
+  contact_sensor: ContactSensor = env.scene[sensor_name]
+
+  foot_quat = asset.data.body_link_quat_w[:, asset_cfg.body_ids]  # [B, N, 4]
+  gravity_expanded = _GRAVITY_VEC.expand(foot_quat.shape[0], foot_quat.shape[1], 3)
+  projected_gravity = quat_apply_inverse(
+    foot_quat.reshape(-1, 4),
+    gravity_expanded.reshape(-1, 3),
+  ).reshape(foot_quat.shape[0], foot_quat.shape[1], 3)
+
+  tilt = torch.sqrt(
+    torch.sum(torch.square(projected_gravity[:, :, :2]), dim=-1)
+  )  # [B, N]
+
+  assert contact_sensor.data.force is not None
+  force_mag = torch.norm(contact_sensor.data.force, dim=-1)  # [B, N]
+  in_contact = (force_mag > 0.5).float()
+
+  return torch.sum(tilt * in_contact, dim=1)
+
+
+def standing_double_support(
+  env: ManagerBasedRlEnv,
+  sensor_name: str,
+  command_name: str,
+  command_threshold: float = 0.1,
+) -> torch.Tensor:
+  """Reward having both feet on the ground when the velocity command is near zero.
+
+  Returns 1.0 when all feet are in contact AND command magnitude is below
+  threshold, 0.0 otherwise.  This prevents the policy from exploiting
+  contact-gated penalties by lifting a leg during standing.
+  """
+  contact_sensor: ContactSensor = env.scene[sensor_name]
+  command = env.command_manager.get_command(command_name)
+  assert command is not None
+
+  # Check if command is near zero.
+  linear_norm = torch.norm(command[:, :2], dim=1)
+  angular_norm = torch.abs(command[:, 2])
+  total_command = linear_norm + angular_norm
+  is_standing = (total_command < command_threshold).float()
+
+  # Check if ALL feet are in contact.
+  assert contact_sensor.data.force is not None
+  force_mag = torch.norm(contact_sensor.data.force, dim=-1)  # [B, N]
+  in_contact = (force_mag > 0.5).float()
+  all_in_contact = (in_contact.sum(dim=1) >= in_contact.shape[1]).float()
+
+  return all_in_contact * is_standing
