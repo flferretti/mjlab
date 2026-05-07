@@ -171,27 +171,31 @@ def get_qdd_robot_cfg() -> EntityCfg:
 # Action scale and offset matching gb-rl-locomotion's rescale_to_limits.
 #
 # gb-rl uses EMAJointPositionToLimitsActionCfg(scale=0.5, rescale_to_limits=True)
-# which maps actions in [-1, 1] to the middle 50 % of each joint's range:
-#   offset = (lower + upper) / 2      (center of joint range)
-#   scale  = 0.5 * (upper - lower) / 2  (quarter of full span)
+# with soft_joint_pos_limit_factor=0.9, which maps actions in [-1, 1] to:
+#   offset = (lower + upper) / 2                    (center of joint range)
+#   scale  = 0.5 * (upper - lower) * 0.9 / 2       (45% of full span)
+#
+# The 0.9 factor shrinks the usable range to 90% of the physical limits,
+# matching IsaacLab's soft_joint_pos_limit_factor on the QDD asset.
 #
 # The offset dict is used with use_default_offset=False so the action's
 # zero-point sits at the joint-range midpoint (e.g. bent knee), not at
 # the MJCF default qpos (straight legs).
 
+SOFT_JOINT_POS_LIMIT_FACTOR = 0.9
+
 
 def _compute_action_scale_offset() -> tuple[dict[str, float], dict[str, float]]:
-  m = mujoco.MjModel.from_xml_path(str(QDD_XML))
+  spec = get_spec()
   scale: dict[str, float] = {}
   offset: dict[str, float] = {}
-  for i in range(m.njnt):
-    jname = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, i)
-    if m.jnt_type[i] != 3:  # hinge joints only
+  for j in spec.joints:
+    if j.type != 3:  # hinge joints only
       continue
-    lo, hi = float(m.jnt_range[i, 0]), float(m.jnt_range[i, 1])
+    lo, hi = float(j.range[0]), float(j.range[1])
     span = hi - lo
-    scale[jname] = 0.5 * span / 2.0
-    offset[jname] = (lo + hi) / 2.0
+    scale[j.name] = 0.5 * span * SOFT_JOINT_POS_LIMIT_FACTOR / 2.0
+    offset[j.name] = (lo + hi) / 2.0
   return scale, offset
 
 
