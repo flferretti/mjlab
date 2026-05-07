@@ -24,7 +24,13 @@ assert QDD_XML.exists()
 
 
 def get_spec() -> mujoco.MjSpec:
-  return mujoco.MjSpec.from_file(str(QDD_XML))
+  spec = mujoco.MjSpec.from_file(str(QDD_XML))
+  # Resolve meshdir to an absolute path so that mesh loading works after
+  # MjSpec.attach() (which loses the original modelfiledir context) and
+  # regardless of CWD or broken symlinks.
+  meshdir = Path(spec.modelfiledir) / spec.compiler.meshdir
+  spec.compiler.meshdir = str(meshdir.resolve())
+  return spec
 
 
 ##
