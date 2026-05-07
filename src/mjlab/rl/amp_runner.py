@@ -145,13 +145,31 @@ class MjlabAmpOnPolicyRunner:
     for key in list(alg_cfg.keys()):
       if key not in AMP_PPO.__init__.__code__.co_varnames:
         alg_cfg.pop(key)
-    self.alg: AMP_PPO = AMP_PPO(
-      actor_critic=self.actor_critic,
-      discriminator=self.discriminator,
-      amp_data=self.amp_data,
-      device=self.device,
-      **alg_cfg,
-    )
+
+    # rsl-rl v4+ requires separate actor/critic; v3 uses combined
+    # actor_critic.
+    try:
+      from amp_rsl_rl.utils._compat import RSL_RL_V4_PLUS
+    except ImportError:
+      RSL_RL_V4_PLUS = False
+
+    if RSL_RL_V4_PLUS:
+      self.alg: AMP_PPO = AMP_PPO(
+        actor=self.actor_critic.actor,
+        critic=self.actor_critic.critic,
+        discriminator=self.discriminator,
+        amp_data=self.amp_data,
+        device=self.device,
+        **alg_cfg,
+      )
+    else:
+      self.alg: AMP_PPO = AMP_PPO(
+        actor_critic=self.actor_critic,
+        discriminator=self.discriminator,
+        amp_data=self.amp_data,
+        device=self.device,
+        **alg_cfg,
+      )
 
     # Storage.
     self.num_steps_per_env: int = self.cfg["num_steps_per_env"]
