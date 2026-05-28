@@ -277,6 +277,7 @@ class MjlabAmpOnPolicyRunner:
       mean_style_reward_log /= self.num_steps_per_env
       mean_task_reward_log /= self.num_steps_per_env
 
+      update_results = self.alg.update()
       (
         mean_value_loss,
         mean_surrogate_loss,
@@ -287,7 +288,7 @@ class MjlabAmpOnPolicyRunner:
         mean_accuracy_policy,
         mean_accuracy_expert,
         mean_kl_divergence,
-      ) = self.alg.update()
+      ) = update_results[:9]
       stop = time.time()
       learn_time = stop - start
       self.current_learning_iteration = it
