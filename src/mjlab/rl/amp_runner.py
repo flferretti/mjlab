@@ -342,7 +342,7 @@ class MjlabAmpOnPolicyRunner:
     """Run codesign optimizer step if any CodesignPdActuator is present."""
     from mjlab.actuator.codesign_actuator import CodesignPdActuator
 
-    for entity in self.env.unwrapped.scene.values():
+    for entity in self.env.unwrapped.scene.entities.values():
       if not hasattr(entity, "actuators"):
         continue
       for actuator in entity.actuators.values():
