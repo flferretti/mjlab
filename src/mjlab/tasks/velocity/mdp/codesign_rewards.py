@@ -93,8 +93,15 @@ class torque_saturation_proximity:
   def __init__(self, cfg: RewardTermCfg, env: "ManagerBasedRlEnv"):
     asset: "Entity" = env.scene[cfg.params["asset_cfg"].name]
     self._actuator_ids = _resolve_actuator_ids(cfg.params["asset_cfg"], asset)
-    limits = asset.data.effort_limits  # (num_envs, num_actuators)
-    self._limits = limits[:1, self._actuator_ids]  # (1, J)
+    limits: torch.Tensor | None = None
+    for act in asset._actuators:
+      if act.force_limit is not None:
+        limits = act.force_limit[:1, self._actuator_ids]
+        break
+    if limits is None:
+      tau_nom = float(cfg.params.get("tau_nominal", 80.0))
+      limits = torch.full((1, len(self._actuator_ids)), tau_nom)
+    self._limits = limits
     self._threshold = float(cfg.params.get("threshold", 0.8))
     self._sharpness = float(cfg.params.get("sharpness", 15.0))
 
@@ -166,8 +173,14 @@ class codesign_torque_composite:
     self._sat_threshold = float(cfg.params.get("saturation_threshold", 0.8))
     self._sat_sharpness = float(cfg.params.get("saturation_sharpness", 15.0))
 
-    limits = asset.data.effort_limits
-    self._limits = limits[:1, self._actuator_ids]  # (1, J)
+    # Get effort limits from the actuator's force_limit tensor.
+    # Fall back to tau_nominal if unavailable (e.g. during codesign where
+    # limits are dynamic).
+    self._limits: torch.Tensor | None = None
+    for act in asset._actuators:
+      if act.force_limit is not None:
+        self._limits = act.force_limit[:1, self._actuator_ids]
+        break
 
   def __call__(
     self,
@@ -193,7 +206,8 @@ class codesign_torque_composite:
 
     # Saturation proximity.
     if self._w_saturation > 0:
-      ratio = torch.abs(tau) / (self._limits + 1e-6)
+      limits = self._limits if self._limits is not None else self._tau_nominal
+      ratio = torch.abs(tau) / (limits + 1e-6)
       sat_penalty = torch.sigmoid(self._sat_sharpness * (ratio - self._sat_threshold))
       result = result + self._w_saturation * sat_penalty.mean(dim=1)
 

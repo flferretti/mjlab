@@ -826,6 +826,15 @@ wheels = [
 ]
 
 [[package]]
+name = "gb-motion-prior-lupin"
+version = "0.1.0"
+source = { git = "ssh://git@github.com/gbionics/gb-motion-prior-lupin#da7455922f0c7b2086469893efc7f8ce801fbe1c" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-5-mjlab-cpu' and extra == 'extra-5-mjlab-cu128')" },
+    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-5-mjlab-cpu' and extra == 'extra-5-mjlab-cu128')" },
+]
+
+[[package]]
 name = "gitdb"
 version = "4.0.12"
 source = { registry = "https://pypi.org/simple" }
@@ -1667,6 +1676,7 @@ version = "1.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "amp-rsl-rl" },
+    { name = "gb-motion-prior-lupin" },
     { name = "imageio-ffmpeg" },
     { name = "mediapy" },
     { name = "mjviser" },
@@ -1731,6 +1741,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "amp-rsl-rl", git = "https://github.com/gbionics/amp-rsl-rl" },
+    { name = "gb-motion-prior-lupin", git = "ssh://git@github.com/gbionics/gb-motion-prior-lupin" },
     { name = "imageio-ffmpeg" },
     { name = "mediapy", specifier = ">=1.2.6" },
     { name = "mjviser", specifier = ">=0.0.11" },
