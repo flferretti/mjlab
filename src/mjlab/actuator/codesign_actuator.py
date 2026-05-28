@@ -108,7 +108,7 @@ class CodesignPdActuator(IdealPdActuator["CodesignPdActuatorCfg"]):
   ) -> None:
     super().__init__(cfg, entity, target_ids, target_names)
 
-    from morphlab.optimization.gumbel_codesign import (
+    from mjlab.actuator.gumbel_codesign import (
       CodesignConfig,
       CodesignScheduler,
       GumbelSoftmaxActuator,
@@ -146,7 +146,7 @@ class CodesignPdActuator(IdealPdActuator["CodesignPdActuatorCfg"]):
     super().initialize(mj_model, model, data, device)
     self.gumbel = self.gumbel.to(device)
 
-    from morphlab.optimization.gumbel_codesign import CodesignScheduler
+    from mjlab.actuator.gumbel_codesign import CodesignScheduler
 
     self._scheduler = CodesignScheduler(self.gumbel, device=device)
 

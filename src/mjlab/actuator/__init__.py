@@ -29,15 +29,15 @@ from mjlab.actuator.builtin_actuator import (
   BuiltinVelocityActuatorCfg as BuiltinVelocityActuatorCfg,
 )
 from mjlab.actuator.builtin_group import BuiltinActuatorGroup as BuiltinActuatorGroup
+from mjlab.actuator.codesign_actuator import CodesignPdActuator as CodesignPdActuator
+from mjlab.actuator.codesign_actuator import (
+  CodesignPdActuatorCfg as CodesignPdActuatorCfg,
+)
 from mjlab.actuator.dc_actuator import DcMotorActuator as DcMotorActuator
 from mjlab.actuator.dc_actuator import DcMotorActuatorCfg as DcMotorActuatorCfg
 from mjlab.actuator.learned_actuator import LearnedMlpActuator as LearnedMlpActuator
 from mjlab.actuator.learned_actuator import (
   LearnedMlpActuatorCfg as LearnedMlpActuatorCfg,
-)
-from mjlab.actuator.codesign_actuator import CodesignPdActuator as CodesignPdActuator
-from mjlab.actuator.codesign_actuator import (
-  CodesignPdActuatorCfg as CodesignPdActuatorCfg,
 )
 from mjlab.actuator.pd_actuator import IdealPdActuator as IdealPdActuator
 from mjlab.actuator.pd_actuator import IdealPdActuatorCfg as IdealPdActuatorCfg

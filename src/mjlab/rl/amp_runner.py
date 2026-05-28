@@ -292,6 +292,9 @@ class MjlabAmpOnPolicyRunner:
       learn_time = stop - start
       self.current_learning_iteration = it
 
+      # -- Codesign step (if codesign actuator is active) --
+      self._codesign_step(it)
+
       if self.log_dir is not None:
         self._log(
           it=it,
@@ -333,6 +336,24 @@ class MjlabAmpOnPolicyRunner:
 
     assert self.log_dir is not None
     self.save(os.path.join(self.log_dir, f"model_{self.current_learning_iteration}.pt"))
+
+  def _codesign_step(self, it: int) -> None:
+    """Run codesign optimizer step if any CodesignPdActuator is present."""
+    from mjlab.actuator.codesign_actuator import CodesignPdActuator
+
+    for entity in self.env.scene.values():
+      if not hasattr(entity, "actuators"):
+        continue
+      for actuator in entity.actuators.values():
+        if isinstance(actuator, CodesignPdActuator):
+          info = actuator.codesign_step(it)
+          if info is not None and self.logger is not None:
+            for key, val in info.items():
+              if isinstance(val, (int, float)):
+                self.logger.log_scalar(key, val, it)
+            # Log summary at intervals.
+            if it % 100 == 0:
+              print(f"[Codesign iter {it}] {actuator.codesign_summary}")
 
   # ------------------------------------------------------------------
   # Save / Load

@@ -194,9 +194,7 @@ class codesign_torque_composite:
     # Saturation proximity.
     if self._w_saturation > 0:
       ratio = torch.abs(tau) / (self._limits + 1e-6)
-      sat_penalty = torch.sigmoid(
-        self._sat_sharpness * (ratio - self._sat_threshold)
-      )
+      sat_penalty = torch.sigmoid(self._sat_sharpness * (ratio - self._sat_threshold))
       result = result + self._w_saturation * sat_penalty.mean(dim=1)
 
     # Torque rate.
