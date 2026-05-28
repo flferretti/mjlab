@@ -345,7 +345,7 @@ class MjlabAmpOnPolicyRunner:
     for entity in self.env.unwrapped.scene.entities.values():
       if not hasattr(entity, "actuators"):
         continue
-      for actuator in entity.actuators.values():
+      for actuator in entity.actuators:
         if isinstance(actuator, CodesignPdActuator):
           info = actuator.codesign_step(it)
           if info is not None:
