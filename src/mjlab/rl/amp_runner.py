@@ -347,13 +347,84 @@ class MjlabAmpOnPolicyRunner:
       for actuator in entity.actuators.values():
         if isinstance(actuator, CodesignPdActuator):
           info = actuator.codesign_step(it)
-          if info is not None and self.logger is not None:
-            for key, val in info.items():
-              if isinstance(val, (int, float)):
-                self.logger.log_scalar(key, val, it)
-            # Log summary at intervals.
-            if it % 100 == 0:
-              print(f"[Codesign iter {it}] {actuator.codesign_summary}")
+          if info is not None:
+            self._log_codesign(actuator, info, it)
+
+  def _log_codesign(
+    self,
+    actuator: "CodesignPdActuator",  # noqa: F821
+    info: dict[str, object],
+    it: int,
+  ) -> None:
+    """Log detailed codesign metrics to W&B/TensorBoard."""
+    import torch.nn.functional as F
+
+    gumbel = actuator.gumbel
+    writer = self.logger
+    if writer is None or not hasattr(writer, "add_scalar"):
+      return
+
+    # --- Scalar metrics ---
+    writer.add_scalar("codesign/loss_total", info["codesign/total_loss"], it)
+    writer.add_scalar("codesign/temperature", info["codesign/temperature"], it)
+    writer.add_scalar("codesign/n_types_active", info["codesign/n_types_active"], it)
+
+    # Per-type τ_max as separate curves.
+    tau_max_list = info["codesign/tau_max"]
+    for k, tau_val in enumerate(tau_max_list):
+      writer.add_scalar(f"codesign_tau/type_{k}", tau_val, it)
+
+    # τ_max spread (max - min): measures differentiation between types.
+    if len(tau_max_list) > 1:
+      tau_spread = max(tau_max_list) - min(tau_max_list)
+      writer.add_scalar("codesign/tau_spread", tau_spread, it)
+
+    # --- Assignment entropy (measures how decisive the assignment is) ---
+    with torch.no_grad():
+      p = F.softmax(gumbel.alpha / max(gumbel.temperature.item(), 0.01), dim=-1)
+      # Per-joint entropy: H = -Σ p log p
+      entropy = -(p * (p + 1e-8).log()).sum(dim=-1)
+      writer.add_scalar("codesign/assignment_entropy_mean", entropy.mean().item(), it)
+
+      # Per-type usage fraction (across unique joints).
+      usage = p.mean(dim=0)
+      for k in range(p.shape[-1]):
+        writer.add_scalar(f"codesign_usage/type_{k}", usage[k].item(), it)
+
+    # --- Per-joint assigned type (as a bar/scalar per unique joint) ---
+    if it % 50 == 0:
+      assignment = gumbel.hard_assignment()
+      unique_joints = gumbel.symmetry.unique_joints
+      for j_name in unique_joints:
+        writer.add_scalar(f"codesign_joint/{j_name}", assignment[j_name], it)
+
+    # --- Torque statistics from the logged buffer ---
+    if gumbel._torque_log:
+      with torch.no_grad():
+        tau_all = torch.cat(gumbel._torque_log, dim=0)
+        tau_abs = tau_all.abs()
+        writer.add_scalar(
+          "codesign_torque/rms", tau_all.pow(2).mean().sqrt().item(), it
+        )
+        writer.add_scalar("codesign_torque/peak", tau_abs.max().item(), it)
+        # Per-joint peak torque.
+        joint_peaks = tau_abs.max(dim=0).values
+        tau_eff = gumbel.tau_eff(use_gumbel=False)
+        sat_ratios = joint_peaks / (tau_eff + 1e-6)
+        writer.add_scalar(
+          "codesign_torque/max_saturation_ratio",
+          sat_ratios.max().item(),
+          it,
+        )
+        writer.add_scalar(
+          "codesign_torque/mean_saturation_ratio",
+          sat_ratios.mean().item(),
+          it,
+        )
+
+    # Print summary periodically.
+    if it % 100 == 0:
+      print(f"[Codesign iter {it}] {actuator.codesign_summary}")
 
   # ------------------------------------------------------------------
   # Save / Load

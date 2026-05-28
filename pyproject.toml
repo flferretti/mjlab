@@ -49,6 +49,7 @@ dependencies = [
   "tensorboard>=2.20.0",
   "onnxscript>=0.5.4",
   "wandb>=0.22.3",
+  "amp-rsl-rl",
 ]
 
 [project.urls]
@@ -141,6 +142,7 @@ torch = [
 ]
 mujoco = { index = "mujoco" }
 mujoco-warp = { git = "https://github.com/google-deepmind/mujoco_warp", rev = "ea7f05b" }
+amp-rsl-rl = { git = "https://github.com/gbionics/amp-rsl-rl" }
 
 [tool.ruff]
 src = ["src"]  # Helpful for recognizing first-party imports.
