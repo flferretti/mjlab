@@ -93,15 +93,23 @@ class torque_saturation_proximity:
   def __init__(self, cfg: RewardTermCfg, env: "ManagerBasedRlEnv"):
     asset: "Entity" = env.scene[cfg.params["asset_cfg"].name]
     self._actuator_ids = _resolve_actuator_ids(cfg.params["asset_cfg"], asset)
-    limits: torch.Tensor | None = None
+    tau_nom = float(cfg.params.get("tau_nominal", 80.0))
+    n_joints = len(self._actuator_ids) if isinstance(self._actuator_ids, list) else 12
+    all_limits = torch.full((1, n_joints), tau_nom)
+    offset = 0
     for act in asset._actuators:
+      n_act_joints = len(act.target_names)
       if act.force_limit is not None:
-        limits = act.force_limit[:1, self._actuator_ids]
-        break
-    if limits is None:
-      tau_nom = float(cfg.params.get("tau_nominal", 80.0))
-      limits = torch.full((1, len(self._actuator_ids)), tau_nom)
-    self._limits = limits
+        for i in range(n_act_joints):
+          global_idx = offset + i
+          if isinstance(self._actuator_ids, list):
+            if global_idx in self._actuator_ids:
+              local_idx = self._actuator_ids.index(global_idx)
+              all_limits[0, local_idx] = act.force_limit[0, i]
+          else:
+            all_limits[0, global_idx] = act.force_limit[0, i]
+      offset += n_act_joints
+    self._limits = all_limits
     self._threshold = float(cfg.params.get("threshold", 0.8))
     self._sharpness = float(cfg.params.get("sharpness", 15.0))
 
@@ -173,14 +181,26 @@ class codesign_torque_composite:
     self._sat_threshold = float(cfg.params.get("saturation_threshold", 0.8))
     self._sat_sharpness = float(cfg.params.get("saturation_sharpness", 15.0))
 
-    # Get effort limits from the actuator's force_limit tensor.
-    # Fall back to tau_nominal if unavailable (e.g. during codesign where
-    # limits are dynamic).
-    self._limits: torch.Tensor | None = None
+    # Get effort limits from each actuator's force_limit tensor.
+    # Each actuator covers a subset of joints — we need to gather all.
+    n_joints = len(self._actuator_ids) if isinstance(self._actuator_ids, list) else 12
+    all_limits = torch.full((1, n_joints), self._tau_nominal)
+    offset = 0
     for act in asset._actuators:
+      n_act_joints = len(act.target_names)
       if act.force_limit is not None:
-        self._limits = act.force_limit[:1, self._actuator_ids]
-        break
+        # Map this actuator's joints into our selected actuator_ids.
+        for i in range(n_act_joints):
+          global_idx = offset + i
+          if isinstance(self._actuator_ids, list):
+            if global_idx in self._actuator_ids:
+              local_idx = self._actuator_ids.index(global_idx)
+              all_limits[0, local_idx] = act.force_limit[0, i]
+          else:
+            # slice — means all joints are selected
+            all_limits[0, global_idx] = act.force_limit[0, i]
+      offset += n_act_joints
+    self._limits: torch.Tensor = all_limits
 
   def __call__(
     self,
@@ -206,7 +226,7 @@ class codesign_torque_composite:
 
     # Saturation proximity.
     if self._w_saturation > 0:
-      limits = self._limits if self._limits is not None else self._tau_nominal
+      limits = self._limits.to(tau.device)
       ratio = torch.abs(tau) / (limits + 1e-6)
       sat_penalty = torch.sigmoid(self._sat_sharpness * (ratio - self._sat_threshold))
       result = result + self._w_saturation * sat_penalty.mean(dim=1)
