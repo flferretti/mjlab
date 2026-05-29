@@ -337,6 +337,22 @@ class MjlabAmpOnPolicyRunner:
 
     assert self.log_dir is not None
     self.save(os.path.join(self.log_dir, f"model_{self.current_learning_iteration}.pt"))
+    self._print_codesign_summary()
+
+  def _print_codesign_summary(self) -> None:
+    """Print final codesign motor assignment if codesign actuator is active."""
+    from mjlab.actuator.codesign_actuator import CodesignPdActuator
+
+    for entity in self.env.unwrapped.scene.entities.values():
+      if not hasattr(entity, "actuators"):
+        continue
+      for actuator in entity.actuators:
+        if isinstance(actuator, CodesignPdActuator):
+          print("\n" + "=" * 60)
+          print("CODESIGN FINAL MOTOR ASSIGNMENT")
+          print("=" * 60)
+          print(actuator.codesign_summary)
+          print("=" * 60 + "\n")
 
   def _codesign_step(self, it: int) -> None:
     """Run codesign optimizer step if any CodesignPdActuator is present."""

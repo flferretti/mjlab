@@ -172,9 +172,18 @@ def run_train(task_id: str, cfg: TrainConfig, log_dir: Path) -> None:
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
     runner.load(str(resume_path))
 
-  runner.learn(
-    num_learning_iterations=cfg.agent.max_iterations, init_at_random_ep_len=True
-  )
+  try:
+    runner.learn(
+      num_learning_iterations=cfg.agent.max_iterations, init_at_random_ep_len=True
+    )
+  except KeyboardInterrupt:
+    print("\n[INFO] Training interrupted by user.")
+    if runner.log_dir is not None:
+      runner.save(
+        os.path.join(runner.log_dir, f"model_{runner.current_learning_iteration}.pt")
+      )
+      print(f"[INFO] Saved checkpoint at iteration {runner.current_learning_iteration}")
+    runner._print_codesign_summary()
 
   env.close()
 
