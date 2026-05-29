@@ -51,7 +51,7 @@ def select_gpus(
   if existing_visible_devices is not None:
     # Parse existing CUDA_VISIBLE_DEVICES.
     available_gpus = [
-      int(x.strip()) for x in existing_visible_devices.split(",") if x.strip()
+      x.strip() for x in existing_visible_devices.split(",") if x.strip()
     ]
     # Empty CUDA_VISIBLE_DEVICES means CPU mode.
     if not available_gpus:
