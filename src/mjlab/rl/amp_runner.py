@@ -191,6 +191,9 @@ class MjlabAmpOnPolicyRunner:
     self.git_status_repos: list[str] = [rsl_rl.__file__, amp_rsl_rl.__file__]
     self._export_policy_fn: Callable | None = None
 
+    # Standalone codesign module (only active if env has codesign config).
+    self._init_codesign()
+
   # ------------------------------------------------------------------
   # Training loop
   # ------------------------------------------------------------------
@@ -340,43 +343,112 @@ class MjlabAmpOnPolicyRunner:
     self._print_codesign_summary()
 
   def _print_codesign_summary(self) -> None:
-    """Print final codesign motor assignment if codesign actuator is active."""
-    from mjlab.actuator.codesign_actuator import CodesignPdActuator
+    """Print final codesign motor assignment if codesign module is active."""
+    if self._codesign_module is None:
+      return
+    print("\n" + "=" * 60)
+    print("CODESIGN FINAL MOTOR ASSIGNMENT")
+    print("=" * 60)
+    print(self._codesign_module.summary())
+    print("=" * 60 + "\n")
 
-    for entity in self.env.unwrapped.scene.entities.values():
-      if not hasattr(entity, "actuators"):
-        continue
-      for actuator in entity.actuators:
-        if isinstance(actuator, CodesignPdActuator):
-          print("\n" + "=" * 60)
-          print("CODESIGN FINAL MOTOR ASSIGNMENT")
-          print("=" * 60)
-          print(actuator.codesign_summary)
-          print("=" * 60 + "\n")
+  def _init_codesign(self) -> None:
+    """Initialize standalone codesign module if env has codesign config."""
+    self._codesign_module = None
+    self._codesign_scheduler = None
+
+    env_cfg = self.env.unwrapped.cfg  # type: ignore[union-attr]
+    codesign_cfg_dict = getattr(env_cfg, "codesign", None)
+    if codesign_cfg_dict is None:
+      return
+
+    from mjlab.actuator.gumbel_codesign import (
+      CodesignConfig,
+      CodesignScheduler,
+      GumbelSoftmaxActuator,
+      SymmetrySpec,
+    )
+
+    symmetry = SymmetrySpec(
+      joint_names=codesign_cfg_dict["joint_names"],
+      symmetry_pairs=codesign_cfg_dict["symmetry_pairs"],
+    )
+    cfg = CodesignConfig(
+      n_types=codesign_cfg_dict["n_types"],
+      init_tau_max=codesign_cfg_dict["init_tau_max"],
+      temperature_init=codesign_cfg_dict["temperature_init"],
+      temperature_min=codesign_cfg_dict["temperature_min"],
+      temperature_decay=codesign_cfg_dict["temperature_decay"],
+      lambda_types=codesign_cfg_dict["lambda_types"],
+      lambda_balance=codesign_cfg_dict["lambda_balance"],
+      lambda_tau=codesign_cfg_dict["lambda_tau"],
+      lambda_saturation=codesign_cfg_dict["lambda_saturation"],
+      lambda_rms=codesign_cfg_dict["lambda_rms"],
+      lambda_peak=codesign_cfg_dict["lambda_peak"],
+      min_tau=codesign_cfg_dict["min_tau"],
+      max_tau=codesign_cfg_dict["max_tau"],
+      codesign_lr=codesign_cfg_dict["codesign_lr"],
+      codesign_interval=codesign_cfg_dict["codesign_interval"],
+    )
+    self._codesign_module = GumbelSoftmaxActuator(cfg, symmetry).to(self.device)
+    self._codesign_module.eval()
+    self._codesign_scheduler = CodesignScheduler(
+      self._codesign_module, device=self.device
+    )
+    self._codesign_warmup = codesign_cfg_dict.get("warmup_iters", 0)
+
+    # Resolve the joint-to-actuator mapping for effort limit updates.
+    self._codesign_joint_names = codesign_cfg_dict["joint_names"]
+    print(
+      f"[Codesign] Initialized: {cfg.n_types} types, "
+      f"τ_max={codesign_cfg_dict['init_tau_max']}, "
+      f"warmup={self._codesign_warmup} iters"
+    )
 
   def _codesign_step(self, it: int) -> None:
-    """Run codesign optimizer step if any CodesignPdActuator is present."""
-    from mjlab.actuator.codesign_actuator import CodesignPdActuator
+    """Run standalone codesign optimizer step and update effort limits."""
+    if self._codesign_module is None or self._codesign_scheduler is None:
+      return
 
-    for entity in self.env.unwrapped.scene.entities.values():
-      if not hasattr(entity, "actuators"):
-        continue
-      for actuator in entity.actuators:
-        if isinstance(actuator, CodesignPdActuator):
-          info = actuator.codesign_step(it)
-          if info is not None:
-            self._log_codesign(actuator, info, it)
+    # Skip codesign during warmup — let the policy learn to walk first.
+    if it < self._codesign_warmup:
+      return
+
+    # Collect torques from all actuators on the robot entity.
+    robot = self.env.unwrapped.scene["robot"]
+    tau = robot.data.actuator_force  # (num_envs, num_actuators)
+
+    # Log torques into the codesign module.
+    self._codesign_module.log_torques(tau.detach())
+
+    # Run codesign optimization step.
+    info = self._codesign_scheduler.step(it)
+    if info is None:
+      return
+
+    # Update effort limits on the actual actuators based on learned τ_max.
+    with torch.no_grad():
+      tau_eff = self._codesign_module.tau_eff(use_gumbel=False)  # (n_joints,)
+      for actuator in robot.actuators:
+        if actuator.force_limit is None:
+          continue
+        for i, jname in enumerate(actuator.target_names):
+          if jname in self._codesign_joint_names:
+            j_idx = self._codesign_joint_names.index(jname)
+            actuator.force_limit[:, i] = tau_eff[j_idx]
+
+    self._log_codesign(info, it)
 
   def _log_codesign(
     self,
-    actuator: "CodesignPdActuator",  # noqa: F821
     info: dict[str, object],
     it: int,
   ) -> None:
     """Log detailed codesign metrics to W&B/TensorBoard."""
     import torch.nn.functional as F
 
-    gumbel = actuator.gumbel
+    assert self._codesign_module is not None
+    gumbel = self._codesign_module
     writer = self.logger
     if writer is None or not hasattr(writer, "add_scalar"):
       return
@@ -399,20 +471,17 @@ class MjlabAmpOnPolicyRunner:
     # --- Assignment entropy (measures how decisive the assignment is) ---
     with torch.no_grad():
       p = F.softmax(gumbel.alpha / max(gumbel.temperature.item(), 0.01), dim=-1)
-      # Per-joint entropy: H = -Σ p log p
       entropy = -(p * (p + 1e-8).log()).sum(dim=-1)
       writer.add_scalar("codesign/assignment_entropy_mean", entropy.mean().item(), it)
 
-      # Per-type usage fraction (across unique joints).
       usage = p.mean(dim=0)
       for k in range(p.shape[-1]):
         writer.add_scalar(f"codesign_usage/type_{k}", usage[k].item(), it)
 
-    # --- Per-joint assigned type (as a bar/scalar per unique joint) ---
+    # --- Per-joint assigned type ---
     if it % 50 == 0:
       assignment = gumbel.hard_assignment()
-      unique_joints = gumbel.symmetry.unique_joints
-      for j_name in unique_joints:
+      for j_name in gumbel.symmetry.unique_joints:
         writer.add_scalar(f"codesign_joint/{j_name}", assignment[j_name], it)
 
     # --- Torque statistics from the logged buffer ---
@@ -424,7 +493,6 @@ class MjlabAmpOnPolicyRunner:
           "codesign_torque/rms", tau_all.pow(2).mean().sqrt().item(), it
         )
         writer.add_scalar("codesign_torque/peak", tau_abs.max().item(), it)
-        # Per-joint peak torque.
         joint_peaks = tau_abs.max(dim=0).values
         tau_eff = gumbel.tau_eff(use_gumbel=False)
         sat_ratios = joint_peaks / (tau_eff + 1e-6)
@@ -441,7 +509,7 @@ class MjlabAmpOnPolicyRunner:
 
     # Print summary periodically.
     if it % 100 == 0:
-      print(f"[Codesign iter {it}] {actuator.codesign_summary}")
+      print(f"[Codesign iter {it}] {gumbel.summary()}")
 
   # ------------------------------------------------------------------
   # Save / Load
