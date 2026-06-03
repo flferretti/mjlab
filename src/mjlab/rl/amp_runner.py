@@ -527,6 +527,9 @@ class MjlabAmpOnPolicyRunner:
       "iter": self.current_learning_iteration,
       "infos": infos,
     }
+    # Save codesign state if active.
+    if self._codesign_module is not None:
+      saved_dict["codesign_state_dict"] = self._codesign_module.state_dict()
     torch.save(saved_dict, path)
     if self.cfg.get("upload_model", True) and self.logger is not None:
       self.logger.save_model(path, self.current_learning_iteration)
@@ -563,6 +566,14 @@ class MjlabAmpOnPolicyRunner:
       self.env.unwrapped.common_step_counter = infos["env_state"][  # type: ignore[union-attr]
         "common_step_counter"
       ]
+
+    # Restore codesign state if available.
+    codesign_state = loaded_dict.get("codesign_state_dict")
+    if codesign_state is not None and self._codesign_module is not None:
+      self._codesign_module.load_state_dict(codesign_state)
+      print("[Codesign] Restored state from checkpoint.")
+      print(f"[Codesign] {self._codesign_module.summary()}")
+
     return infos
 
   # ------------------------------------------------------------------

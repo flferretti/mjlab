@@ -163,12 +163,13 @@ class UniformVelocityCommand(CommandTerm):
       enabled = server.gui.add_checkbox("Enable", initial_value=False)
 
       for label, max_val in axes:
+        slider_max = max(max_val, 10.0)
         max_input = server.gui.add_slider(
           f"Max {label}",
           initial_value=max_val,
           step=0.1,
           min=0.1,
-          max=10.0,
+          max=slider_max,
         )
         slider = server.gui.add_slider(
           label,
