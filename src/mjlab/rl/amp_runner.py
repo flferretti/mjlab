@@ -484,6 +484,9 @@ class MjlabAmpOnPolicyRunner:
       for j_name in gumbel.symmetry.unique_joints:
         writer.add_scalar(f"codesign_joint/{j_name}", assignment[j_name], it)
 
+      # Log assignment evolution table for W&B scatter plot.
+      self._log_codesign_assignment_table(assignment, it)
+
     # --- Torque statistics from the logged buffer ---
     if gumbel._torque_log:
       with torch.no_grad():
@@ -510,6 +513,89 @@ class MjlabAmpOnPolicyRunner:
     # Print summary periodically.
     if it % 100 == 0:
       print(f"[Codesign iter {it}] {gumbel.summary()}")
+
+  def _log_codesign_assignment_table(self, assignment: dict[str, int], it: int) -> None:
+    """Log joint-type assignment as a W&B scatter plot.
+
+    Produces a plot with: x=iteration, y=joint name, color=motor type.
+    """
+    if self._logger_type != "wandb":
+      return
+
+    if not hasattr(self, "_codesign_assignment_data"):
+      self._codesign_assignment_data: list[list] = []
+
+    assert self._codesign_module is not None
+    tau_max_list = self._codesign_module.hard_tau_max()
+
+    for j_name, type_idx in assignment.items():
+      tau_val = tau_max_list[type_idx]
+      self._codesign_assignment_data.append(
+        [it, j_name, type_idx, f"Type {type_idx} ({tau_val:.0f} Nm)"]
+      )
+
+    # Log every 500 iterations to avoid excessive overhead.
+    if it % 500 == 0 and self._codesign_assignment_data:
+      self._plot_assignment_evolution(it)
+
+  def _plot_assignment_evolution(self, it: int) -> None:
+    """Render assignment evolution as a colored scatter and log to W&B."""
+    import wandb
+
+    try:
+      import matplotlib
+
+      matplotlib.use("Agg")
+      import matplotlib.pyplot as plt
+    except ImportError:
+      return
+
+    assert self._codesign_module is not None
+    n_types = self._codesign_module.n_types
+    tau_max_list = self._codesign_module.hard_tau_max()
+
+    data = self._codesign_assignment_data
+    iters = [row[0] for row in data]
+    joints = [row[1] for row in data]
+    types = [row[2] for row in data]
+
+    # Map joint names to y-indices for plotting.
+    unique_joints = list(dict.fromkeys(joints))  # preserve order
+    joint_to_y = {j: i for i, j in enumerate(unique_joints)}
+    y_vals = [joint_to_y[j] for j in joints]
+
+    # Color map: one color per motor type.
+    cmap = plt.cm.get_cmap("tab10", n_types)
+    colors = [cmap(t) for t in types]
+
+    fig, ax = plt.subplots(figsize=(10, max(4, len(unique_joints) * 0.4)))
+    ax.scatter(iters, y_vals, c=colors, s=30, marker="s", edgecolors="none")
+
+    ax.set_yticks(range(len(unique_joints)))
+    ax.set_yticklabels(unique_joints, fontsize=9)
+    ax.set_xlabel("Iteration")
+    ax.set_title("Motor Type Assignment Evolution")
+    ax.grid(axis="x", alpha=0.3)
+
+    # Legend.
+    handles = []
+    for k in range(n_types):
+      handles.append(
+        plt.Line2D(
+          [0],
+          [0],
+          marker="s",
+          color="w",
+          markerfacecolor=cmap(k),
+          markersize=10,
+          label=f"Type {k} ({tau_max_list[k]:.0f} Nm)",
+        )
+      )
+    ax.legend(handles=handles, loc="upper left", fontsize=8)
+
+    plt.tight_layout()
+    wandb.log({"codesign/assignment_evolution": wandb.Image(fig)}, step=it)
+    plt.close(fig)
 
   # ------------------------------------------------------------------
   # Save / Load
