@@ -86,6 +86,6 @@ def gbionics_qdd_codesign_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   )
 
   # Store codesign config on the env config so the runner can access it.
-  cfg.codesign = CODESIGN_CFG  # type: ignore[attr-defined]
+  cfg.codesign = CODESIGN_CFG
 
   return cfg

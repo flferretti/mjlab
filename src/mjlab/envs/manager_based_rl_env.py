@@ -162,6 +162,14 @@ class ManagerBasedRlEnvCfg:
   algorithms that expect unscaled reward signals (e.g., HER, static reward scaling).
   """
 
+  codesign: dict | None = None
+  """Optional codesign configuration for hardware optimization (motor selection).
+
+  When set, the training runner initializes a codesign module that optimizes
+  motor-type assignments alongside policy training. See
+  ``mjlab.actuator.gumbel_codesign`` for details.
+  """
+
 
 class ManagerBasedRlEnv:
   """Manager-based RL environment."""

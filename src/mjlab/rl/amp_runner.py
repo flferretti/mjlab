@@ -359,7 +359,6 @@ class MjlabAmpOnPolicyRunner:
 
     env_cfg = self.env.unwrapped.cfg  # type: ignore[union-attr]
     codesign_cfg_dict = getattr(env_cfg, "codesign", None)
-    print(f"[Codesign] env_cfg type: {type(env_cfg).__name__}, has codesign: {codesign_cfg_dict is not None}")
     if codesign_cfg_dict is None:
       return
 
@@ -414,7 +413,9 @@ class MjlabAmpOnPolicyRunner:
     # Skip codesign during warmup — let the policy learn to walk first.
     if it < self._codesign_warmup:
       if it == 0:
-        print(f"[Codesign] Warmup active, codesign starts at iter {self._codesign_warmup}")
+        print(
+          f"[Codesign] Warmup active, codesign starts at iter {self._codesign_warmup}"
+        )
       return
 
     # Collect torques from all actuators on the robot entity.
