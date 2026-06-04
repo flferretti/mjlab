@@ -412,6 +412,8 @@ class MjlabAmpOnPolicyRunner:
 
     # Skip codesign during warmup — let the policy learn to walk first.
     if it < self._codesign_warmup:
+      if it == 0:
+        print(f"[Codesign] Warmup active, codesign starts at iter {self._codesign_warmup}")
       return
 
     # Collect torques from all actuators on the robot entity.
