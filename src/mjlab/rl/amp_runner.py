@@ -555,7 +555,7 @@ class MjlabAmpOnPolicyRunner:
       return
 
     assert self._codesign_module is not None
-    n_types = self._codesign_module.n_types
+    n_types = self._codesign_module.cfg.n_types
     tau_max_list = self._codesign_module.hard_tau_max()
 
     data = self._codesign_assignment_data
