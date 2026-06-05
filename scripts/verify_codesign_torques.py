@@ -26,7 +26,13 @@ def main():
   parser.add_argument("--checkpoint", required=True, help="Checkpoint path (.pt)")
   parser.add_argument("--num-steps", type=int, default=1000, help="Rollout steps")
   parser.add_argument("--device", default="cpu", help="Device (cpu or cuda:X)")
+  parser.add_argument("--video", action="store_true", help="Record video of rollout")
+  parser.add_argument(
+    "--video-path", default="codesign_verify.mp4", help="Output video path"
+  )
   args = parser.parse_args()
+
+  from pathlib import Path
 
   from mjlab.envs import ManagerBasedRlEnv
   from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
@@ -37,8 +43,24 @@ def main():
   agent_cfg = load_rl_cfg(args.task)
   env_cfg.scene.num_envs = 1
 
-  # Create env.
-  env = ManagerBasedRlEnv(cfg=env_cfg, device=args.device)
+  # Create env with rendering if video requested.
+  render_mode = "rgb_array" if args.video else None
+  env = ManagerBasedRlEnv(cfg=env_cfg, device=args.device, render_mode=render_mode)
+
+  if args.video:
+    from mjlab.utils.wrappers import VideoRecorder
+
+    video_dir = Path(args.video_path).parent
+    video_dir.mkdir(parents=True, exist_ok=True)
+    env = VideoRecorder(
+      env,
+      video_folder=str(video_dir),
+      step_trigger=lambda step: step == 0,
+      video_length=args.num_steps,
+      disable_logger=True,
+      name_prefix=Path(args.video_path).stem,
+    )
+
   env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 
   # Create runner and load checkpoint.
@@ -147,6 +169,9 @@ def main():
       f"\n✗ {total_violations} LIMIT VIOLATIONS DETECTED"
       "\n  (Some torque clipping may not be active during play)"
     )
+
+  if args.video:
+    print(f"\n[INFO] Video saved to: {args.video_path}")
 
   env.close()
 
