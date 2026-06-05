@@ -70,7 +70,18 @@ def main():
   joint_names = codesign.symmetry.joint_names
   tau_limits = {name: tau_eff[i].item() for i, name in enumerate(joint_names)}
 
-  print("\nPer-joint τ_max (learned):")
+  # Apply learned effort limits to the actual actuators (enables clipping).
+  robot = env.unwrapped.scene["robot"]
+  with torch.no_grad():
+    for actuator in robot.actuators:
+      if actuator.force_limit is None:
+        continue
+      for i, jname in enumerate(actuator.target_names):
+        if jname in joint_names:
+          j_idx = joint_names.index(jname)
+          actuator.force_limit[:, i] = tau_eff[j_idx]
+
+  print("\nPer-joint τ_max (learned) — applied to actuators:")
   for name, limit in tau_limits.items():
     print(f"  {name:20s}: {limit:.1f} Nm")
 

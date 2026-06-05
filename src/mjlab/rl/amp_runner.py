@@ -664,7 +664,25 @@ class MjlabAmpOnPolicyRunner:
       print("[Codesign] Restored state from checkpoint.")
       print(f"[Codesign] {self._codesign_module.summary()}")
 
+      # Apply learned effort limits to actuators (enables clipping during play).
+      self._apply_codesign_effort_limits()
+
     return infos
+
+  def _apply_codesign_effort_limits(self) -> None:
+    """Set actuator force limits from the codesign module's learned τ_max."""
+    if self._codesign_module is None:
+      return
+    robot = self.env.unwrapped.scene["robot"]
+    with torch.no_grad():
+      tau_eff = self._codesign_module.tau_eff(use_gumbel=False)
+      for actuator in robot.actuators:
+        if actuator.force_limit is None:
+          continue
+        for i, jname in enumerate(actuator.target_names):
+          if jname in self._codesign_joint_names:
+            j_idx = self._codesign_joint_names.index(jname)
+            actuator.force_limit[:, i] = tau_eff[j_idx]
 
   # ------------------------------------------------------------------
   # Inference
