@@ -43,6 +43,18 @@ class SymmetrySpec:
   symmetry_pairs: list[tuple[str, str]]
   """Pairs of (left, right) joints that share parameters."""
 
+  def __post_init__(self) -> None:
+    names = set(self.joint_names)
+    seen_right: set[str] = set()
+    for left, right in self.symmetry_pairs:
+      if left not in names:
+        raise ValueError(f"Symmetry pair left joint '{left}' not in joint_names.")
+      if right not in names:
+        raise ValueError(f"Symmetry pair right joint '{right}' not in joint_names.")
+      if right in seen_right:
+        raise ValueError(f"Joint '{right}' appears as the right side of two pairs.")
+      seen_right.add(right)
+
   @property
   def unique_joints(self) -> list[str]:
     """Unique joints after symmetry collapse (keeps first of each pair)."""
@@ -75,6 +87,24 @@ class SymmetrySpec:
     if unique_values.dim() >= 2 and unique_values.shape[-1] != len(self.joint_names):
       return unique_values[..., idx_tensor, :]
     return unique_values[..., idx_tensor]
+
+  def reduce_to_unique_max(self, full_values: torch.Tensor) -> torch.Tensor:
+    """Reduce a full per-joint tensor to unique joints via max over each group.
+
+    Symmetric L/R joints map to the same unique index; the max is taken so a
+    shared motor covers the more demanding side.
+
+    Args:
+      full_values: Shape (n_joints,).
+
+    Returns:
+      Tensor of shape (n_unique,).
+    """
+    indices = [self.unique_index_for(j) for j in self.joint_names]
+    idx_tensor = torch.tensor(indices, device=full_values.device)
+    out = torch.zeros(self.n_unique, device=full_values.device, dtype=full_values.dtype)
+    out.scatter_reduce_(0, idx_tensor, full_values, reduce="amax", include_self=False)
+    return out
 
 
 @dataclass
@@ -113,6 +143,31 @@ class CodesignConfig:
 
   lambda_peak: float = 0.1
   """Weight for surrogate peak torque loss."""
+
+  # --- Demand-driven clustering parameters ---
+
+  lambda_deficit: float = 2.0
+  """Weight for the covering deficit loss. Drives τ_max UP to cover the torque
+  demand of assigned joints. Linear (L1); must dominate the assignment cost so
+  every joint stays covered (keep lambda_deficit > lambda_motor_cost)."""
+
+  lambda_motor_cost: float = 0.5
+  """Weight for the per-joint assignment cost. Drives each joint toward the
+  smallest motor that still covers it, producing tiered clustering. Too small
+  → motors bloat; too large (≥ lambda_deficit) → undersizing."""
+
+  demand_quantile: float = 0.99
+  """Quantile of |unclipped torque| used as the per-joint demand. High quantile
+  (not max) for robustness to transient spikes, but high enough to cover peaks."""
+
+  demand_margin: float = 1.1
+  """Safety factor applied to the demand quantile when sizing motors."""
+
+  usage_threshold: float = 0.05
+  """Usage fraction below which a motor type is considered inactive (pruned)."""
+
+  usage_sharpness: float = 20.0
+  """Sharpness of the soft active-type indicator sigmoid."""
 
   min_tau: float = 5.0
   """Minimum τ_max in Nm (physical lower bound)."""
@@ -188,6 +243,9 @@ class GumbelSoftmaxActuator(nn.Module):
     # Torque log buffer for codesign step (detached rollout data).
     self._torque_log: list[torch.Tensor] = []
 
+    # Monitoring metrics from the latest surrogate-loss evaluation.
+    self.latest_metrics: dict[str, float] = {}
+
   @property
   def tau_max(self) -> torch.Tensor:
     """Per-type torque limits (Nm), shape (K,). Bounded via sigmoid."""
@@ -240,53 +298,84 @@ class GumbelSoftmaxActuator(nn.Module):
     self._torque_log.clear()
 
   def surrogate_loss(self, device: str | torch.device = "cpu") -> torch.Tensor:
-    """Compute differentiable surrogate loss from logged torques.
+    """Differentiable demand-driven clustering loss for codesign.
 
-    This is the main loss for the codesign optimizer. It re-applies soft
-    saturation differentiably to logged (detached) torque commands, then
-    penalizes:
-      1. RMS of applied torques (normalized by fixed reference)
-      2. Peak (max) applied torque across joints
-      3. Soft saturation risk: how close joints are to their limits
-      4. Structural codesign regularizers (type count, balance, tau pressure)
+    Treats motor sizing as a covering/clustering problem:
+      - Each joint has a torque *demand* (high quantile of |unclipped torque|).
+      - Each motor type k has a capacity τ_max_k (learnable, unless frozen).
+      - Assignment p_uk clusters joints into types.
+
+    Loss terms:
+      1. Deficit (covering): penalizes τ_eff < demand → drives τ_max UP to cover
+         the demand of assigned joints. This is the upward pressure that the old
+         surrogate lacked (which caused all types to collapse to the minimum).
+      2. Motor cost: penalizes large active motors → drives τ_max DOWN and merges
+         clusters. Balanced against the deficit term.
+      3. Type count: penalizes the number of active motor types.
 
     Returns:
-      Scalar loss for backprop through alpha and tau_raw.
+      Scalar loss for backprop through alpha (and tau_raw if not frozen).
     """
     if not self._torque_log:
       return torch.tensor(0.0, device=device, requires_grad=True)
 
-    # Stack logged torques: (N_total, n_joints)
-    tau_logged = torch.cat(self._torque_log, dim=0).to(device)
+    # Stack logged (unclipped) torques: (N_total, n_joints).
+    tau_logged = torch.cat(self._torque_log, dim=0).to(device).abs()
 
-    # Differentiable tau_eff with Gumbel noise for exploration.
-    tau_eff = self.tau_eff(use_gumbel=True)  # (n_joints,)
-    tau_eff_expanded = tau_eff.unsqueeze(0)  # (1, n_joints)
-
-    # Re-apply soft saturation differentiably.
-    ratio = tau_logged / (tau_eff_expanded + 1e-6)
-    tau_applied = tau_eff_expanded * torch.tanh(ratio)
-
-    # Reference normalization (fixed, not learned — prevents gaming).
     tau_ref = self.cfg.max_tau
 
-    # --- RMS penalty: penalize mean squared applied torque ---
-    rms_per_env = torch.sqrt(torch.mean(tau_applied**2, dim=1) + 1e-8)
-    l_rms = self.cfg.lambda_rms * (rms_per_env / tau_ref).mean()
+    # --- Per-joint demand: high quantile + safety margin, capped at max_tau. ---
+    # Detached: demand is a target the design must cover, not something to game.
+    with torch.no_grad():
+      q = self.cfg.demand_quantile
+      demand_full = torch.quantile(tau_logged, q, dim=0)  # (n_joints,)
+      demand_full = (demand_full * self.cfg.demand_margin).clamp(max=tau_ref)
+      demand_unique = self.symmetry.reduce_to_unique_max(demand_full)  # (n_unique,)
 
-    # --- Peak penalty: penalize maximum absolute torque ---
-    peak_per_env = torch.max(torch.abs(tau_applied), dim=1).values
-    l_peak = self.cfg.lambda_peak * (peak_per_env / tau_ref).mean()
+    # --- Differentiable effective capacity per unique joint. ---
+    # Use straight-through hard Gumbel during training so the deficit/coverage is
+    # evaluated on the DISCRETE motor that will actually be selected (argmax),
+    # not a soft blend. A soft blend could "cover" demand via a mixture while the
+    # eventual hard assignment picks a smaller motor and violates coverage.
+    temp = float(self.temperature.item())
+    if self.training:
+      p = F.gumbel_softmax(self.alpha, tau=temp, hard=True)
+    else:
+      p = F.softmax(self.alpha / max(temp, 0.01), dim=-1)
+    tau_eff_unique = (p * self.tau_max.unsqueeze(0)).sum(dim=-1)  # (n_unique,)
 
-    # --- Soft saturation risk: sigmoid proximity to limit ---
-    sat_ratio = torch.abs(tau_applied) / (tau_eff_expanded + 1e-6)
-    sat_risk = torch.sigmoid(20.0 * (sat_ratio - 0.8))
-    l_sat = self.cfg.lambda_saturation * sat_risk.mean()
+    # --- Deficit (covering): upward pressure on τ_max. ---
+    # Each unique joint must be covered: τ_eff_j ≥ demand_j. Linear (L1) so the
+    # upward gradient is constant whenever undersized — quadratic deficit would
+    # vanish near the boundary and let the cost term pull τ_eff below demand.
+    deficit = F.relu(demand_unique - tau_eff_unique)
+    l_deficit = self.cfg.lambda_deficit * (deficit / tau_ref).mean()
 
-    # --- Structural losses (type count, balance, tau pressure) ---
-    l_structural = self._structural_loss()
+    # --- Assignment cost: per-joint downward pressure on capacity. ---
+    # Each joint "pays" for the motor capacity it is assigned, so low-demand
+    # joints (e.g. ankle_roll) prefer small motors instead of being assigned to
+    # an oversized one. This prevents collapse to a single big motor. With a
+    # linear deficit dominating it, the equilibrium sits at τ_eff ≈ demand.
+    l_assign_cost = self.cfg.lambda_motor_cost * (tau_eff_unique / tau_ref).mean()
 
-    return l_rms + l_peak + l_sat + l_structural
+    # --- Type count: fewer distinct motor types (favor reuse/clustering). ---
+    usage = p.mean(dim=0)  # (K,)
+    active = torch.sigmoid(
+      self.cfg.usage_sharpness * (usage - self.cfg.usage_threshold)
+    )
+    l_types = self.cfg.lambda_types * active.sum()
+
+    # Stash monitoring metrics (detached).
+    with torch.no_grad():
+      self.latest_metrics = {
+        "deficit_mean": deficit.mean().item(),
+        "deficit_max": deficit.max().item(),
+        "demand_max": demand_unique.max().item(),
+        "demand_mean": demand_unique.mean().item(),
+        "n_active_types": float((active > 0.5).sum().item()),
+      }
+
+    return l_deficit + l_assign_cost + l_types
 
   def step_temperature(self) -> None:
     """Decay temperature by one step. Call once per training iteration."""
@@ -305,25 +394,6 @@ class GumbelSoftmaxActuator(nn.Module):
   def hard_tau_max(self) -> list[float]:
     """Get final per-type τ_max values (Nm)."""
     return self.tau_max.detach().tolist()
-
-  def _structural_loss(self) -> torch.Tensor:
-    """Combined structural codesign regularization loss."""
-    p = F.softmax(self.alpha / max(self.temperature.item(), 0.01), dim=-1)
-
-    # Type count: penalize having many active types.
-    usage = p.mean(dim=0)
-    active = torch.sigmoid(10.0 * (usage - 0.1))
-    l_types = self.cfg.lambda_types * active.sum()
-
-    # Balance: penalize one type dominating (> 70% usage).
-    max_usage = usage.max()
-    excess = F.relu(max_usage - 0.7)
-    l_balance = self.cfg.lambda_balance * excess**2
-
-    # Tau pressure: encourage smaller motors.
-    l_tau = self.cfg.lambda_tau * self.tau_max.sum()
-
-    return l_types + l_balance + l_tau
 
   def summary(self) -> str:
     """Human-readable summary of current assignment state."""

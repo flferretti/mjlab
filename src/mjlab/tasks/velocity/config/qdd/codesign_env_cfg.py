@@ -34,24 +34,33 @@ QDD_SYMMETRY_PAIRS: list[tuple[str, str]] = [
 # training loop can access them without importing a separate module.
 CODESIGN_CFG: dict = {
   "n_types": 3,
-  "init_tau_max": [80.0, 50.0, 17.0],
+  "init_tau_max": [90.0, 60.0, 30.0],
   "joint_names": list(QDD_ACTUATED_JOINTS),
   "symmetry_pairs": QDD_SYMMETRY_PAIRS,
   "temperature_init": 1.0,
   "temperature_min": 0.1,
   "temperature_decay": 0.9995,
-  "lambda_types": 0.01,
+  "lambda_types": 0.05,
   "lambda_balance": 0.05,
   "lambda_tau": 0.0,
   "lambda_saturation": 0.05,
   "lambda_rms": 0.01,
   "lambda_peak": 0.02,
+  # Demand-driven clustering: deficit dominates motor cost so τ_max grows to
+  # cover the policy's true torque demand instead of collapsing to the minimum.
+  "lambda_deficit": 2.0,
+  "lambda_motor_cost": 0.5,
+  "demand_quantile": 0.99,
+  "demand_margin": 1.1,
+  "usage_threshold": 0.05,
+  "usage_sharpness": 20.0,
   "min_tau": 5.0,
   "max_tau": 120.0,
   "codesign_lr": 3e-3,
   "codesign_interval": 10,
   "warmup_iters": 2000,
-  "freeze_tau": True,
+  "freeze_tau": False,
+  "tau_apply_rate": 0.1,
 }
 
 

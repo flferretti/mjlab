@@ -56,6 +56,9 @@ class IdealPdActuator(Actuator, Generic[IdealPdCfgT]):
     self.default_stiffness: torch.Tensor | None = None
     self.default_damping: torch.Tensor | None = None
     self.default_force_limit: torch.Tensor | None = None
+    # Unclipped PD output from the most recent compute(), used as the torque
+    # demand signal by the codesign module. Shape (num_envs, num_joints).
+    self.applied_effort: torch.Tensor | None = None
 
   def edit_spec(self, spec: mujoco.MjSpec, target_names: list[str]) -> None:
     # Add <motor> actuator to spec, one per target.
@@ -106,6 +109,9 @@ class IdealPdActuator(Actuator, Generic[IdealPdCfgT]):
     computed_torques = self.stiffness * pos_error
     computed_torques += self.damping * vel_error
     computed_torques += cmd.effort_target
+
+    # Store the unclipped PD output as the codesign torque-demand signal.
+    self.applied_effort = computed_torques.detach()
 
     return self._clip_effort(computed_torques)
 

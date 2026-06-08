@@ -82,30 +82,58 @@ every 10 PPO iterations. It operates on logged torques from the policy rollout.
 
 Using Gumbel-Softmax for differentiable discrete selection:
 
-$$\tau_{\text{eff}}^j = \sum_k p_{jk} \cdot \tau_{\text{max}}^k$$
+$$\tau_{\text{eff}}^u = \sum_k p_{uk} \cdot \tau_{\text{max}}^k$$
 
-where $p_{jk} = \text{GumbelSoftmax}(\alpha_j / T)$ during training, or $\text{argmax}$ at eval.
+where $p_{uk} = \text{GumbelSoftmax}(\alpha_u / T)$ during training, or $\text{argmax}$ at eval, and $u$ indexes the 6 unique joints.
 
-### Loss components
+### Demand-driven clustering loss
 
-$$\mathcal{L} = \underbrace{\lambda_{\text{rms}} \cdot \frac{\text{RMS}(\hat{\tau})}{\tau_{\text{ref}}}}_{\text{RMS penalty}} + \underbrace{\lambda_{\text{peak}} \cdot \frac{\max|\hat{\tau}|}{\tau_{\text{ref}}}}_{\text{Peak penalty}} + \underbrace{\lambda_{\text{sat}} \cdot \sigma(20 \cdot (|\hat{\tau}|/\tau_{\text{eff}} - 0.8))}_{\text{Saturation risk}} + \underbrace{\mathcal{L}_{\text{struct}}}_{\text{Structural}}$$
+The motor sizing is framed as a **covering / clustering** problem. The previous
+surrogate (RMS + peak + saturation penalties on soft-clipped torques) only had
+*downward* pressure on $\tau_{\text{max}}$, so all types collapsed to the
+minimum and the policy could only stand. The current surrogate adds an explicit
+*upward* pressure from the policy's true torque **demand**.
 
-Where $\hat{\tau} = \tau_{\text{eff}} \cdot \tanh(\tau_{\text{logged}} / \tau_{\text{eff}})$ (differentiable soft clipping).
+**Per-joint demand** (detached target, robust to transient spikes):
+
+$$d_u = \min\!\Big(\tau_{\max},\; m \cdot \max_{j \in u} \, Q_{q}\big(|\tau^{\text{unclipped}}_j|\big)\Big)$$
+
+where $Q_q$ is the $q=0.99$ quantile of the **unclipped** PD torque (pre-clamp,
+the real demand — `robot.data.actuator_force` is post-clamp and would cap the
+demand artificially), $m = 1.1$ is a safety margin, and the $\max$ over the
+symmetric L/R pair sizes a shared motor for the harder side.
+
+$$\mathcal{L} = \underbrace{\lambda_{\text{def}} \cdot \frac{1}{U}\sum_u \frac{\text{ReLU}(d_u - \tau_{\text{eff}}^u)}{\tau_{\text{ref}}}}_{\text{Deficit (covering): }\tau\uparrow} + \underbrace{\lambda_{\text{cost}} \cdot \frac{1}{U}\sum_u \frac{\tau_{\text{eff}}^u}{\tau_{\text{ref}}}}_{\text{Assignment cost: }\tau\downarrow} + \underbrace{\lambda_{\text{types}} \cdot \sum_k \sigma\big(s(\bar{p}_k - \theta)\big)}_{\text{Type count}}$$
+
+- **Deficit** is *linear* (L1) so the upward gradient stays constant while a
+  joint is undersized; a quadratic deficit would vanish at the boundary and let
+  the cost term pull $\tau_{\text{eff}}$ below demand.
+- **Assignment cost** is charged *per joint* (not per type), so a low-demand
+  joint (e.g. `ankle_roll`) prefers the smallest motor that covers it instead of
+  being lumped onto an oversized one. This prevents the degenerate collapse to a
+  single large motor.
+- **Type count** uses a soft active-type indicator $\sigma(s(\bar{p}_k - \theta))$
+  with usage threshold $\theta$ and sharpness $s$; it rewards reusing the same
+  motor across joints, so the number of distinct motor types is itself optimized.
+
+At equilibrium each active type converges to the demand of its assigned joints —
+i.e. the joints are clustered into a small number of motor tiers, and both the
+**number of types** and their **max torques** are learned jointly.
 
 **Current lambda values:**
 
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
-| `lambda_rms` | 0.01 | Minimize average torque usage |
-| `lambda_peak` | 0.02 | Minimize peak torque |
-| `lambda_saturation` | 0.05 | Avoid operating near limits |
-| `lambda_tau` | 1e-4 | Prefer smaller motors |
-| `lambda_types` | 0.01 | Prefer fewer distinct types |
-| `lambda_balance` | 0.05 | Prevent one type dominating |
+| `lambda_deficit` | 2.0 | Cover demand (drives $\tau_{\text{max}}$ up); must exceed `lambda_motor_cost` |
+| `lambda_motor_cost` | 0.5 | Per-joint capacity cost (drives $\tau_{\text{max}}$ down → tiering) |
+| `lambda_types` | 0.05 | Prefer fewer distinct motor types |
+| `demand_quantile` | 0.99 | Quantile of unclipped torque used as demand |
+| `demand_margin` | 1.1 | Safety factor on the demand |
+| `freeze_tau` | False | If True, fix the motor catalog and learn only assignment |
 
-**Structural loss:**
-
-$$\mathcal{L}_{\text{struct}} = \lambda_{\text{types}} \cdot \sum_k \sigma(10 \cdot (\bar{p}_k - 0.1)) + \lambda_{\text{balance}} \cdot \text{ReLU}(\max_k \bar{p}_k - 0.7)^2 + \lambda_{\text{tau}} \cdot \sum_k \tau_{\text{max}}^k$$
+The effort limits on the real actuators are updated toward $\tau_{\text{eff}}^j$
+with an EMA (`tau_apply_rate` = 0.1) to damp oscillation in the alternating loop,
+and codesign only starts after a `warmup_iters` = 2000 walking warmup.
 
 ---
 

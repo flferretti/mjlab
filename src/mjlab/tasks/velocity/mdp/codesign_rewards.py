@@ -93,25 +93,36 @@ class torque_saturation_proximity:
   def __init__(self, cfg: RewardTermCfg, env: "ManagerBasedRlEnv"):
     asset: "Entity" = env.scene[cfg.params["asset_cfg"].name]
     self._actuator_ids = _resolve_actuator_ids(cfg.params["asset_cfg"], asset)
-    tau_nom = float(cfg.params.get("tau_nominal", 80.0))
+    self._tau_nom = float(cfg.params.get("tau_nominal", 80.0))
+    self._threshold = float(cfg.params.get("threshold", 0.8))
+    self._sharpness = float(cfg.params.get("sharpness", 15.0))
+
+  def _gather_limits(self, asset: "Entity") -> torch.Tensor:
+    """Read the CURRENT per-joint effort limits from the actuators.
+
+    Read dynamically (not cached) because the codesign optimizer mutates
+    ``force_limit`` during training; a cached copy would leave the policy
+    backing off from stale initial limits.
+    """
     n_joints = len(self._actuator_ids) if isinstance(self._actuator_ids, list) else 12
-    all_limits = torch.full((1, n_joints), tau_nom)
+    all_limits = torch.full(
+      (1, n_joints), self._tau_nom, device=asset.data.actuator_force.device
+    )
     offset = 0
     for act in asset._actuators:
       n_act_joints = len(act.target_names)
-      if act.force_limit is not None:
+      force_limit = getattr(act, "force_limit", None)
+      if force_limit is not None:
         for i in range(n_act_joints):
           global_idx = offset + i
           if isinstance(self._actuator_ids, list):
             if global_idx in self._actuator_ids:
               local_idx = self._actuator_ids.index(global_idx)
-              all_limits[0, local_idx] = act.force_limit[0, i]
+              all_limits[0, local_idx] = force_limit[0, i]
           else:
-            all_limits[0, global_idx] = act.force_limit[0, i]
+            all_limits[0, global_idx] = force_limit[0, i]
       offset += n_act_joints
-    self._limits = all_limits
-    self._threshold = float(cfg.params.get("threshold", 0.8))
-    self._sharpness = float(cfg.params.get("sharpness", 15.0))
+    return all_limits
 
   def __call__(
     self,
@@ -122,7 +133,8 @@ class torque_saturation_proximity:
   ) -> torch.Tensor:
     asset: "Entity" = env.scene[asset_cfg.name]
     tau = asset.data.actuator_force[:, self._actuator_ids]  # (B, J)
-    ratio = torch.abs(tau) / (self._limits + 1e-6)
+    limits = self._gather_limits(asset)
+    ratio = torch.abs(tau) / (limits + 1e-6)
     penalty = torch.sigmoid(self._sharpness * (ratio - self._threshold))
     return penalty.mean(dim=1)  # (B,)
 

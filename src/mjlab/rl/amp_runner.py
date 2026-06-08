@@ -385,6 +385,12 @@ class MjlabAmpOnPolicyRunner:
       lambda_saturation=codesign_cfg_dict["lambda_saturation"],
       lambda_rms=codesign_cfg_dict["lambda_rms"],
       lambda_peak=codesign_cfg_dict["lambda_peak"],
+      lambda_deficit=codesign_cfg_dict.get("lambda_deficit", 5.0),
+      lambda_motor_cost=codesign_cfg_dict.get("lambda_motor_cost", 0.02),
+      demand_quantile=codesign_cfg_dict.get("demand_quantile", 0.99),
+      demand_margin=codesign_cfg_dict.get("demand_margin", 1.1),
+      usage_threshold=codesign_cfg_dict.get("usage_threshold", 0.05),
+      usage_sharpness=codesign_cfg_dict.get("usage_sharpness", 20.0),
       min_tau=codesign_cfg_dict["min_tau"],
       max_tau=codesign_cfg_dict["max_tau"],
       codesign_lr=codesign_cfg_dict["codesign_lr"],
@@ -397,6 +403,7 @@ class MjlabAmpOnPolicyRunner:
       self._codesign_module, device=self.device
     )
     self._codesign_warmup = codesign_cfg_dict.get("warmup_iters", 0)
+    self._codesign_tau_apply_rate = codesign_cfg_dict.get("tau_apply_rate", 0.1)
 
     # Resolve the joint-to-actuator mapping for effort limit updates.
     self._codesign_joint_names = codesign_cfg_dict["joint_names"]
@@ -419,9 +426,27 @@ class MjlabAmpOnPolicyRunner:
         )
       return
 
-    # Collect torques from all actuators on the robot entity.
     robot = self.env.unwrapped.scene["robot"]
-    tau = robot.data.actuator_force  # (num_envs, num_actuators)
+
+    # Gather UNCLIPPED PD torque demand (pre-clamp) per joint, in the codesign
+    # joint order. robot.data.actuator_force is POST-clamp (clipped to the
+    # current effort limit), so it can never exceed τ_eff and provides no upward
+    # pressure to grow motors. The unclipped `applied_effort` is the true demand.
+    num_envs = robot.data.actuator_force.shape[0]
+    tau = torch.zeros(num_envs, len(self._codesign_joint_names), device=self.device)
+    found_demand = False
+    for actuator in robot.actuators:
+      demand = getattr(actuator, "applied_effort", None)
+      if demand is None:
+        continue
+      found_demand = True
+      for i, jname in enumerate(actuator.target_names):
+        if jname in self._codesign_joint_names:
+          j_idx = self._codesign_joint_names.index(jname)
+          tau[:, j_idx] = demand[:, i]
+    if not found_demand:
+      # Fallback to clamped torques if no unclipped demand is available.
+      tau = robot.data.actuator_force
 
     # Log torques into the codesign module.
     self._codesign_module.log_torques(tau.detach())
@@ -432,6 +457,8 @@ class MjlabAmpOnPolicyRunner:
       return
 
     # Update effort limits on the actual actuators based on learned τ_max.
+    # Apply gradually (EMA) to reduce oscillation in the alternating loop.
+    rate = self._codesign_tau_apply_rate
     with torch.no_grad():
       tau_eff = self._codesign_module.tau_eff(use_gumbel=False)  # (n_joints,)
       for actuator in robot.actuators:
@@ -440,7 +467,9 @@ class MjlabAmpOnPolicyRunner:
         for i, jname in enumerate(actuator.target_names):
           if jname in self._codesign_joint_names:
             j_idx = self._codesign_joint_names.index(jname)
-            actuator.force_limit[:, i] = tau_eff[j_idx]
+            target = tau_eff[j_idx]
+            current = actuator.force_limit[:, i]
+            actuator.force_limit[:, i] = current + rate * (target - current)
 
     self._log_codesign(info, it)
 
@@ -482,6 +511,18 @@ class MjlabAmpOnPolicyRunner:
       usage = p.mean(dim=0)
       for k in range(p.shape[-1]):
         writer.add_scalar(f"codesign_usage/type_{k}", usage[k].item(), it)
+
+    # --- Demand-driven clustering metrics (from latest surrogate eval) ---
+    for key, val in gumbel.latest_metrics.items():
+      writer.add_scalar(f"codesign_demand/{key}", val, it)
+
+    # --- Per-joint effective τ_max (after assignment) ---
+    with torch.no_grad():
+      tau_eff_joints = gumbel.tau_eff(use_gumbel=False)
+      for j_idx, j_name in enumerate(gumbel.symmetry.joint_names):
+        writer.add_scalar(
+          f"codesign_tau_eff/{j_name}", tau_eff_joints[j_idx].item(), it
+        )
 
     # --- Per-joint assigned type ---
     if it % 50 == 0:
