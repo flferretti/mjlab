@@ -42,7 +42,7 @@ CODESIGN_CFG: dict = {
   "temperature_decay": 0.9995,
   "lambda_types": 0.01,
   "lambda_balance": 0.05,
-  "lambda_tau": 1e-4,
+  "lambda_tau": 0.0,
   "lambda_saturation": 0.05,
   "lambda_rms": 0.01,
   "lambda_peak": 0.02,
@@ -51,6 +51,7 @@ CODESIGN_CFG: dict = {
   "codesign_lr": 3e-3,
   "codesign_interval": 10,
   "warmup_iters": 2000,
+  "freeze_tau": True,
 }
 
 

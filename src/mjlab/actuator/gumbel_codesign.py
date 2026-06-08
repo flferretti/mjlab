@@ -126,6 +126,11 @@ class CodesignConfig:
   codesign_interval: int = 5
   """Update codesign params every N PPO iterations."""
 
+  freeze_tau: bool = False
+  """If True, fix τ_max values (use init_tau_max as a fixed catalog) and only
+  learn the assignment (alpha). This prevents the optimizer from collapsing
+  all types to the same value."""
+
 
 class GumbelSoftmaxActuator(nn.Module):
   """Differentiable motor-type assignment with alternating optimization.
@@ -169,7 +174,11 @@ class GumbelSoftmaxActuator(nn.Module):
       [_inverse_sigmoid_bounded(t, cfg.min_tau, cfg.max_tau) for t in cfg.init_tau_max],
       dtype=torch.float,
     )
-    self.tau_raw = nn.Parameter(init_raw)
+    if cfg.freeze_tau:
+      # Fixed motor catalog — only learn assignment, not motor capacities.
+      self.register_buffer("tau_raw", init_raw)
+    else:
+      self.tau_raw = nn.Parameter(init_raw)
 
     # Temperature state (not a parameter — managed externally).
     self.register_buffer(

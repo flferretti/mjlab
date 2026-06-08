@@ -389,6 +389,7 @@ class MjlabAmpOnPolicyRunner:
       max_tau=codesign_cfg_dict["max_tau"],
       codesign_lr=codesign_cfg_dict["codesign_lr"],
       codesign_interval=codesign_cfg_dict["codesign_interval"],
+      freeze_tau=codesign_cfg_dict.get("freeze_tau", False),
     )
     self._codesign_module = GumbelSoftmaxActuator(cfg, symmetry).to(self.device)
     self._codesign_module.eval()
