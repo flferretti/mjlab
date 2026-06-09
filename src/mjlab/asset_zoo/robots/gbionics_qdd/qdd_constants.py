@@ -30,7 +30,33 @@ def get_spec() -> mujoco.MjSpec:
   # regardless of CWD or broken symlinks.
   meshdir = Path(spec.modelfiledir) / spec.compiler.meshdir
   spec.compiler.meshdir = str(meshdir.resolve())
+  _name_collision_geoms(spec)
   return spec
+
+
+def _name_collision_geoms(spec: mujoco.MjSpec) -> None:
+  """Assign names to all geoms so collisions can be configured by name.
+
+  The source XML leaves every geom unnamed, which makes name-based collision
+  configuration impossible (a name match resolves to a single geom, and
+  ``disable_other_geoms`` cannot disable unnamed geoms individually). We give the
+  root-link mesh and the two foot box geoms dedicated ``*_collision`` names and
+  every other geom a unique ``*_visual_*`` name, so :data:`ROOT_AND_FEET_COLLISION`
+  can enable collisions on the root and feet and disable them everywhere else.
+  """
+  for body in spec.bodies:
+    if body.name == "world":
+      continue
+    for k, geom in enumerate(body.geoms):
+      if body.name == "root_link":
+        geom.name = "root_collision"
+      elif (
+        body.name in ("l_foot_roll", "r_foot_roll")
+        and geom.type == mujoco.mjtGeom.mjGEOM_BOX
+      ):
+        geom.name = f"{body.name[0]}_foot_collision"
+      else:
+        geom.name = f"{body.name}_visual_{k}"
 
 
 ##
@@ -130,17 +156,20 @@ INIT_STATE = EntityCfg.InitialStateCfg(
 # Collision config.
 ##
 
-_foot_regex = "^(l|r)_foot_roll$"
-
-# Keep only foot box geoms as contact surfaces; disable mesh geom contacts.
-FOOT_COLLISION = CollisionCfg(
-  geom_names_expr=(r".*",),
+# Enable collision ONLY on the root link and the two feet; disable it on every
+# other geom (all leg meshes). With contype=0/conaffinity=1 these geoms collide
+# with the terrain (contype=1) but never with each other, so self-collisions are
+# fully disabled. Feet keep condim=3 + friction for walking; the root uses
+# condim=1 (contact detection only, e.g. the trunk-ground sensor / fall checks).
+ROOT_AND_FEET_COLLISION = CollisionCfg(
+  geom_names_expr=(r"^(root|l_foot|r_foot)_collision$",),
   contype=0,
   conaffinity=1,
-  condim=3,
-  priority=1,
-  friction=(0.6,),
-  solimp=(0.9, 0.95, 0.023),
+  condim={r"^(l|r)_foot_collision$": 3, r"^root_collision$": 1},
+  priority={r"^(l|r)_foot_collision$": 1},
+  friction={r"^(l|r)_foot_collision$": (0.6,)},
+  solimp={r"^(l|r)_foot_collision$": (0.9, 0.95, 0.023)},
+  disable_other_geoms=True,
 )
 
 ##
@@ -168,7 +197,7 @@ def get_qdd_robot_cfg() -> EntityCfg:
   """
   return EntityCfg(
     init_state=INIT_STATE,
-    collisions=(FOOT_COLLISION,),
+    collisions=(ROOT_AND_FEET_COLLISION,),
     spec_fn=get_spec,
     articulation=QDD_ARTICULATION,
   )
