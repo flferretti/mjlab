@@ -133,7 +133,18 @@ def run_validation(
     # Disable training-time torque randomization
     if getattr(env_cfg, "events", None) is not None:
         env_cfg.events.pop("randomize_motor_tau_max", None)
-    env = ManagerBasedRlEnv(cfg=env_cfg, device=device_str)
+    
+    # Improve video quality: higher resolution and better camera angle
+    if render:
+        env_cfg.viewer.height = 720  # Increase from 240
+        env_cfg.viewer.width = 960    # Increase from 320
+        # Better viewing angle: slightly elevated and 90 degrees azimuth
+        env_cfg.viewer.elevation = -30.0  # Slightly higher viewpoint
+        env_cfg.viewer.distance = 4.0     # Closer to robot
+    
+    # Pass render_mode to constructor for video capture
+    render_mode = "rgb_array" if render else None
+    env = ManagerBasedRlEnv(cfg=env_cfg, device=device_str, render_mode=render_mode)
 
     # Load policy
     print(f"[Policy] Loading from {policy_path}...")
@@ -146,13 +157,29 @@ def run_validation(
 
     # Decode design to tau vector and apply
     tau_vec = design_to_tau_vector(design)
+    tau_vec_full = tau_vec.unsqueeze(0).to(device_str)  # shape: (1, 12)
     print(f"  Tau values (Nm): {tau_vec.tolist()}")
     
     env_ids = torch.arange(1, dtype=torch.int32, device=device_torch)
+    
+    # Set torques before reset so first obs reflects the design
     set_motor_tau_max(
         env.unwrapped,
         env_ids,
-        tau_vec.unsqueeze(0).to(device_str),
+        tau_vec_full,
+        QDD_JOINT_ORDER,
+        tau_range=TAU_OBS_RANGE,
+    )
+    
+    # Reset to start fresh
+    obs_dict, info = env.reset()
+    obs = obs_dict["actor"] if isinstance(obs_dict, dict) else obs_dict
+    
+    # Re-apply torques after reset (reset events may touch limits)
+    set_motor_tau_max(
+        env.unwrapped,
+        env_ids,
+        tau_vec_full,
         QDD_JOINT_ORDER,
         tau_range=TAU_OBS_RANGE,
     )
@@ -160,6 +187,13 @@ def run_validation(
     trajectory = {"actions": [], "rewards": []}
     if render:
         trajectory["frames"] = []
+        # Capture initial frame before any steps
+        try:
+            frame = env.render()
+            if frame is not None:
+                trajectory["frames"].append(frame)
+        except Exception as e:
+            print(f"Warning: Initial render failed: {e}")
 
     total_reward = 0.0
     print(f"\n[Rollout] Running {rollout_steps} steps...")
@@ -182,8 +216,17 @@ def run_validation(
         trajectory["actions"].append(action.cpu().numpy() if isinstance(action, torch.Tensor) else action)
         trajectory["rewards"].append(step_reward)
 
-        # Render frame every 2 steps for 25 fps video
-        if render and (step % 2 == 0):
+        # Re-assert torques after step (auto-reset on termination keeps the design)
+        set_motor_tau_max(
+            env.unwrapped,
+            env_ids,
+            tau_vec_full,
+            QDD_JOINT_ORDER,
+            tau_range=TAU_OBS_RANGE,
+        )
+
+        # Render frame every step for smooth 50 fps video (render AFTER step to show result)
+        if render:
             try:
                 frame = env.render()
                 if frame is not None:
@@ -208,12 +251,14 @@ def run_validation(
     # Save video if requested
     if output_video and trajectory.get("frames"):
         num_frames = len(trajectory["frames"])
-        print(f"\n[Video] Rendering {num_frames} frames to {output_video}...")
+        # FPS = 50 since we capture every physics step (0.02s per step = 50 Hz)
+        fps = 50
+        print(f"\n[Video] Rendering {num_frames} frames to {output_video} @ {fps} fps...")
         try:
             media.write_video(
                 output_video,
                 trajectory["frames"],
-                fps=25,
+                fps=fps,
             )
             result["video_path"] = output_video
             print(f"✓ Saved video to {output_video}")

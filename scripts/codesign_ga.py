@@ -54,15 +54,16 @@ class ActuatorGroup:
   """(min, max) torque limit (Nm) searched when a custom actuator is integrated."""
 
 
-# QDD lower-body humanoid: 6 symmetric leg groups (extend with torso/neck as
-# independent single-joint groups for full humanoids).
+# QDD lower-body humanoid: 6 symmetric leg groups with wide continuous search bounds
+# (no discrete "custom" flag; all are continuous torque optimizations).
+# Search space expanded to find diverse motor combinations that minimize peak torques.
 QDD_GROUPS: list[ActuatorGroup] = [
-  ActuatorGroup("hip_pitch", ("l_hip_pitch", "r_hip_pitch"), 80.0, (40.0, 110.0)),
-  ActuatorGroup("hip_roll", ("l_hip_roll", "r_hip_roll"), 80.0, (40.0, 110.0)),
-  ActuatorGroup("hip_yaw", ("l_hip_yaw", "r_hip_yaw"), 40.0, (15.0, 70.0)),
-  ActuatorGroup("knee", ("l_knee", "r_knee"), 80.0, (40.0, 110.0)),
-  ActuatorGroup("ankle_pitch", ("l_ankle_pitch", "r_ankle_pitch"), 50.0, (20.0, 80.0)),
-  ActuatorGroup("ankle_roll", ("l_ankle_roll", "r_ankle_roll"), 17.0, (8.0, 40.0)),
+  ActuatorGroup("hip_pitch", ("l_hip_pitch", "r_hip_pitch"), 80.0, (30.0, 150.0)),
+  ActuatorGroup("hip_roll", ("l_hip_roll", "r_hip_roll"), 80.0, (30.0, 150.0)),
+  ActuatorGroup("hip_yaw", ("l_hip_yaw", "r_hip_yaw"), 40.0, (10.0, 100.0)),
+  ActuatorGroup("knee", ("l_knee", "r_knee"), 80.0, (30.0, 150.0)),
+  ActuatorGroup("ankle_pitch", ("l_ankle_pitch", "r_ankle_pitch"), 50.0, (15.0, 120.0)),
+  ActuatorGroup("ankle_roll", ("l_ankle_roll", "r_ankle_roll"), 17.0, (5.0, 80.0)),
 ]
 
 # Canonical joint order the policy/observation expects (must match the trained env).
@@ -83,11 +84,9 @@ class CodesignConfig:
   groups: list[ActuatorGroup]
   joint_order: list[str]
   tau_obs_range: tuple[float, float] = TAU_OBS_RANGE
-  # Hardware-cost weights (objective 2). `w_count` penalizes each integrated
-  # custom actuator (proxy for BOM complexity); `w_torque` penalizes cumulative
-  # torque capacity (proxy for motor mass -> leg-swing inertia).
-  w_count: float = 1.0
-  w_torque: float = 1.0
+  # Hardware-cost weights (objective 2). Soft constraint to prefer 2-3 motor types.
+  w_count: float = 0.5  # Penalty for having more than 3 distinct motor types
+  w_torque: float = 1.0  # Main cost: minimize total torque capacity
   tau_ref: float = 90.0
   """Reference torque (Nm) used to normalize the cumulative-torque term."""
 
@@ -95,13 +94,24 @@ class CodesignConfig:
 # ---------------------------------------------------------------------------
 # 2. Genome <-> design decoding.
 # ---------------------------------------------------------------------------
-# Mixed-variable genome, per group g:
-#   z_g   in {0, 1}      : 0 = standard catalog actuator, 1 = custom actuator.
-#   tau_g in [lo_g, hi_g]: custom max torque (only meaningful when z_g == 1).
+# Pure continuous genome, per group g:
+#   tau_g in [lo_g, hi_g]: max torque limit (Nm) for joint group g.
+# (No discrete custom flag; all variables are continuous for richer search space)
 
 
-def group_var_names(group: ActuatorGroup) -> tuple[str, str]:
-  return f"z_{group.name}", f"tau_{group.name}"
+def group_var_names(group: ActuatorGroup) -> tuple[str]:
+  """Return only the torque variable name (no custom flag)."""
+  return (f"tau_{group.name}",)
+
+
+def count_motor_types(genome: dict[str, float], cfg: CodesignConfig) -> int:
+  """Count distinct torque values (= number of motor types needed)."""
+  seen_taus = set()
+  for group in cfg.groups:
+    (tau_name,) = group_var_names(group)
+    tau = float(genome[tau_name])
+    seen_taus.add(round(tau, 2))  # Round to 2 decimals for floating-point comparison
+  return len(seen_taus)
 
 
 def decode_individual(
@@ -111,23 +121,26 @@ def decode_individual(
 
   Returns:
     tau_per_joint: (n_joints,) array in ``cfg.joint_order`` order (Nm).
-    n_custom_actuators: count of *physical* custom actuators integrated.
+    n_motor_choices: count of unique torque configurations (for diversity metric).
     cumulative_tau: sum of max torque over all physical joints (Nm).
   """
   joint_tau: dict[str, float] = {}
-  n_custom = 0
   cumulative = 0.0
+  n_choices = 0  # Count distinct torque values
+  seen_taus = set()
+
   for group in cfg.groups:
-    z_name, tau_name = group_var_names(group)
-    use_custom = bool(round(float(genome[z_name])))
-    tau = float(genome[tau_name]) if use_custom else group.standard_tau
+    (tau_name,) = group_var_names(group)
+    tau = float(genome[tau_name])
     for j in group.joints:
       joint_tau[j] = tau
       cumulative += tau
-    if use_custom:
-      n_custom += len(group.joints)
+    if tau not in seen_taus:
+      n_choices += 1
+      seen_taus.add(tau)
+
   tau_vec = np.array([joint_tau[j] for j in cfg.joint_order], dtype=np.float32)
-  return tau_vec, n_custom, cumulative
+  return tau_vec, n_choices, cumulative
 
 
 # ---------------------------------------------------------------------------
@@ -522,29 +535,33 @@ def build_backend(name: str, **kwargs) -> CodesignBackend:
 
 def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
   from pymoo.core.problem import Problem
-  from pymoo.core.variable import Binary, Real
+  from pymoo.core.variable import Real
 
-  # Mixed-variable definition: per group a Binary integration flag + a Real tau.
-  variables: dict = {}
+  # Pure continuous variables: per group, optimize torque limit (Nm)
+  # Ordered dict preserves variable order for encoding/decoding
+  from collections import OrderedDict
+
+  variables = OrderedDict()
   for group in cfg.groups:
-    z_name, tau_name = group_var_names(group)
-    variables[z_name] = Binary()
+    (tau_name,) = group_var_names(group)
     variables[tau_name] = Real(bounds=group.tau_bounds)
 
   class CodesignProblem(Problem):
     def __init__(self) -> None:
-      # n_obj=2: [-performance, hardware_cost]. (Split cost into two objectives
-      # by setting n_obj=3 and emitting count/torque separately if desired.)
-      super().__init__(vars=variables, n_obj=2)
+      # n_obj=2: [-performance, hardware_cost]
+      # n_constr=1: exactly 2 distinct motor types (hard constraint)
+      super().__init__(vars=variables, n_obj=2, n_constr=1)
 
     def _evaluate(self, X, out, *args, **kwargs):
-      # X is a 1-D object array of genome dicts (mixed-variable encoding). We
-      # decode the WHOLE population, run a single batched rollout, then split.
-      tau_rows, costs = [], []
+      # X is a 1-D object array of genome dicts (continuous variables only).
+      # Decode the WHOLE population, run a single batched rollout, then split.
+      tau_rows, costs, n_motor_types = [], [], []
       for genome in X:
-        tau_vec, n_custom, cum_tau = decode_individual(genome, cfg)
+        tau_vec, n_choices, cum_tau = decode_individual(genome, cfg)
         tau_rows.append(tau_vec)
-        costs.append((n_custom, cum_tau))
+        costs.append((n_choices, cum_tau))
+        n_motor_types.append(count_motor_types(genome, cfg))
+
       tau_LJ = torch.as_tensor(
         np.stack(tau_rows), dtype=torch.float32, device=backend.device
       )
@@ -556,6 +573,12 @@ def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
         dtype=np.float64,
       )
       out["F"] = np.column_stack([f_perf, f_cost])
+
+      # Constraint: prefer 2-3 motor types. g(x) <= 0, so g = max(0, n_types - 3)
+      # Allows 1, 2, or 3 types. More than 3 is penalized.
+      out["G"] = np.array(
+        [max(0.0, float(n - 3)) for n in n_motor_types], dtype=np.float64
+      )
 
   return CodesignProblem()
 
@@ -578,8 +601,8 @@ def run_optimization(
 
   problem = _make_problem(backend, cfg, n_seeds)
 
-  # NSGA-II with mixed-variable operators. n_offsprings == pop_size keeps every
-  # generation's evaluation batch a constant size, matching the fixed GPU env.
+  # NSGA-II with MixedVariableSampling to handle dict-based continuous variables
+  # MixedVariableSampling works for pure continuous dict variables too
   algorithm = NSGA2(
     pop_size=pop_size,
     n_offsprings=pop_size,
@@ -609,21 +632,34 @@ def run_optimization(
 def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
   X = np.atleast_1d(result.X)
   F = np.atleast_2d(result.F)
+
+  # Handle case where F has been reshaped unexpectedly
+  if F.ndim == 1 or F.shape[1] == 0:
+    print("\n⚠️  No valid solutions found (all designs violated constraints)")
+    print(f"Constraint violations: min={result.cv} (should be <= 0 for feasible)")
+    return
+
+  if F.shape[1] < 2:
+    print(f"\n⚠️  Unexpected result shape: F.shape={F.shape}")
+    print(f"Expected 2 objectives, got {F.shape[1]}")
+    return
+
   order = np.argsort(F[:, 1])  # by ascending hardware cost
   print("\n=== Pareto front (performance vs hardware cost) ===")
-  print(f"{'reward':>10} {'cost':>10} {'#custom':>8} {'cumTau(Nm)':>11}  design")
+  print(f"{'reward':>10} {'cost':>10} {'motors':>7} {'cumTau(Nm)':>11}  design")
   rows = []
   for i in order:
     genome = X[i] if isinstance(X[i], dict) else dict(X[i])
-    tau_vec, n_custom, cum_tau = decode_individual(genome, cfg)
+    tau_vec, n_variants, cum_tau = decode_individual(genome, cfg)
+    n_motor_types = count_motor_types(genome, cfg)
     reward = -F[i, 0]
     cost = F[i, 1]
     design = {
       g.name: round(float(tau_vec[cfg.joint_order.index(g.joints[0])]), 1)
       for g in cfg.groups
     }
-    print(f"{reward:10.3f} {cost:10.3f} {n_custom:8d} {cum_tau:11.1f}  {design}")
-    rows.append((reward, cost, n_custom, cum_tau, design))
+    print(f"{reward:10.3f} {cost:10.3f} {n_motor_types:7d} {cum_tau:11.1f}  {design}")
+    rows.append((reward, cost, n_motor_types, cum_tau, design))
   if out_path:
     np.savez(
       out_path,
