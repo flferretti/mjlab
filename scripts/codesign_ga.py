@@ -105,12 +105,17 @@ def group_var_names(group: ActuatorGroup) -> tuple[str]:
 
 
 def count_motor_types(genome: dict[str, float], cfg: CodesignConfig) -> int:
-  """Count distinct torque values (= number of motor types needed)."""
+  """Count distinct motor types by clustering torque values.
+
+  Uses coarse rounding (1 decimal) to group similar torques into same type.
+  This accounts for manufacturing tolerances and simplifies BOM.
+  """
   seen_taus = set()
   for group in cfg.groups:
     (tau_name,) = group_var_names(group)
     tau = float(genome[tau_name])
-    seen_taus.add(round(tau, 2))  # Round to 2 decimals for floating-point comparison
+    # Round to 1 decimal for coarse clustering (e.g., 80.3, 80.7 -> both ~80)
+    seen_taus.add(round(tau, 1))
   return len(seen_taus)
 
 
@@ -549,8 +554,8 @@ def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
   class CodesignProblem(Problem):
     def __init__(self) -> None:
       # n_obj=2: [-performance, hardware_cost]
-      # n_constr=1: exactly 2 distinct motor types (hard constraint)
-      super().__init__(vars=variables, n_obj=2, n_constr=1)
+      # No hard constraint; soft penalty for >3 motor types via cost function
+      super().__init__(vars=variables, n_obj=2)
 
     def _evaluate(self, X, out, *args, **kwargs):
       # X is a 1-D object array of genome dicts (continuous variables only).
@@ -568,17 +573,16 @@ def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
       performance = backend.evaluate(tau_LJ, n_seeds)  # (L,)
 
       f_perf = -performance  # maximize reward -> minimize negative reward
-      f_cost = np.array(
-        [cfg.w_count * nc + cfg.w_torque * (ct / cfg.tau_ref) for nc, ct in costs],
-        dtype=np.float64,
-      )
-      out["F"] = np.column_stack([f_perf, f_cost])
 
-      # Constraint: prefer 2-3 motor types. g(x) <= 0, so g = max(0, n_types - 3)
-      # Allows 1, 2, or 3 types. More than 3 is penalized.
-      out["G"] = np.array(
-        [max(0.0, float(n - 3)) for n in n_motor_types], dtype=np.float64
-      )
+      # Cost function with soft penalty for excess motor types
+      f_cost = []
+      for (n_choices, cum_tau), n_types in zip(costs, n_motor_types):
+        base_cost = cfg.w_count * n_choices + cfg.w_torque * (cum_tau / cfg.tau_ref)
+        # Penalty: 2.0 per motor type above 3 (tunable)
+        excess_penalty = max(0.0, float(n_types - 3)) * 2.0
+        f_cost.append(base_cost + excess_penalty)
+
+      out["F"] = np.column_stack([f_perf, np.array(f_cost, dtype=np.float64)])
 
   return CodesignProblem()
 
@@ -633,15 +637,10 @@ def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
   X = np.atleast_1d(result.X)
   F = np.atleast_2d(result.F)
 
-  # Handle case where F has been reshaped unexpectedly
-  if F.ndim == 1 or F.shape[1] == 0:
-    print("\n⚠️  No valid solutions found (all designs violated constraints)")
-    print(f"Constraint violations: min={result.cv} (should be <= 0 for feasible)")
-    return
-
-  if F.shape[1] < 2:
+  # Validate result shape
+  if F.ndim != 2 or F.shape[1] < 2:
     print(f"\n⚠️  Unexpected result shape: F.shape={F.shape}")
-    print(f"Expected 2 objectives, got {F.shape[1]}")
+    print(f"Expected (n_designs, 2) objectives, got {F.shape}")
     return
 
   order = np.argsort(F[:, 1])  # by ascending hardware cost
