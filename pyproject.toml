@@ -38,7 +38,7 @@ dependencies = [
   "torchrunx>=0.3.4",
   "warp-lang>=1.12.0",
   "mujoco-warp>=3.7.0.1",
-  "mujoco>=3.7.0",
+  "mujoco>=3.7.0,<3.8",
   "trimesh>=4.8.3",
   "viser>=1.0.26",
   "mjviser>=0.0.11",
@@ -51,6 +51,7 @@ dependencies = [
   "wandb>=0.22.3",
   "amp-rsl-rl",
   "gb-motion-prior-lupin",
+  "pymoo>=0.6.1.6",
 ]
 
 [project.urls]
@@ -99,10 +100,9 @@ cpu = ["torch>=2.7.0"]
 conflicts = [
   [{extra = "cu128"}, {extra = "cpu"}],
 ]
-# The nightly index (py.mujoco.org) only has dev builds, and PEP 440 ranks
-# 3.7.0.devN < 3.7.0, so the >=3.7.0 floor in [project.dependencies] would
-# reject them. This override loosens the constraint for uv resolution only.
-override-dependencies = ["mujoco>=3.7.0.dev0"]
+# The nightly index (py.mujoco.org) only has dev builds, and we keep Mujoco
+# constrained to the Warp-compatible 3.7 series.
+override-dependencies = ["mujoco<3.8"]
 constraint-dependencies = [
   "GitPython>=3.1.47",
   "lxml>=6.1.0",
