@@ -45,7 +45,7 @@ constraints = [
     { name = "gitpython", specifier = ">=3.1.47" },
     { name = "lxml", specifier = ">=6.1.0" },
 ]
-overrides = [{ name = "mujoco", specifier = "<3.8", index = "https://py.mujoco.org/" }]
+overrides = [{ name = "mujoco", specifier = "<3.9", index = "https://py.mujoco.org/" }]
 
 [[package]]
 name = "about-time"
@@ -1803,8 +1803,8 @@ requires-dist = [
     { name = "imageio-ffmpeg" },
     { name = "mediapy", specifier = ">=1.2.6" },
     { name = "mjviser", specifier = ">=0.0.11" },
-    { name = "mujoco", specifier = ">=3.7.0,<3.8", index = "https://py.mujoco.org/" },
-    { name = "mujoco-warp", git = "https://github.com/google-deepmind/mujoco_warp?rev=ea7f05b" },
+    { name = "mujoco", specifier = ">=3.8.0,<3.9", index = "https://py.mujoco.org/" },
+    { name = "mujoco-warp", git = "https://github.com/google-deepmind/mujoco_warp?rev=9edb8e09a6ea859a99232e154899ac0198910216" },
     { name = "onnxscript", specifier = ">=0.5.4" },
     { name = "prettytable" },
     { name = "pymoo", specifier = ">=0.6.1.6" },
@@ -2068,8 +2068,8 @@ wheels = [
 
 [[package]]
 name = "mujoco-warp"
-version = "3.7.0.1"
-source = { git = "https://github.com/google-deepmind/mujoco_warp?rev=ea7f05b#ea7f05baa3e5ea375ed2eeb041fd90eb9b7d6932" }
+version = "3.8.1"
+source = { git = "https://github.com/google-deepmind/mujoco_warp?rev=9edb8e09a6ea859a99232e154899ac0198910216#9edb8e09a6ea859a99232e154899ac0198910216" }
 dependencies = [
     { name = "absl-py" },
     { name = "etils", extra = ["epath"] },

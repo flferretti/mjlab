@@ -317,8 +317,6 @@ class CodesignBackend(abc.ABC):
     """AMP observation group (used by AmpAlignmentMetric); None if unavailable."""
     return obs.get("amp") if isinstance(obs, dict) else None
 
-  # -- Shared evaluation machinery -----------------------------------------
-
   def evaluate(self, tau_LJ: torch.Tensor, n_seeds: int) -> np.ndarray:
     """Score a batch of L designs, each replicated over ``n_seeds`` envs.
 
@@ -330,6 +328,7 @@ class CodesignBackend(abc.ABC):
     assert need <= self.num_envs, (
       f"pop*seeds ({need}) exceeds env batch ({self.num_envs})"
     )
+
     # Replicate each design across its evaluation seeds, then pad the unused
     # tail of the (fixed-size) env batch with the last design.
     tau_rep = tau_LJ.repeat_interleave(n_seeds, dim=0)
