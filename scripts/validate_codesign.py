@@ -145,8 +145,8 @@ def run_validation(
         if hasattr(env_cfg, "commands") and "twist" in env_cfg.commands:
             twist_cmd = env_cfg.commands["twist"]
             twist_cmd.ranges.lin_vel_x = (0.5, 1.5)  # Forward only
-            twist_cmd.ranges.ang_vel_z = (-0.0, 0.0)  # No rotation for pure forward
-            print("[Config] Forcing forward-only velocity (lin_vel_x: 0.5-1.5 m/s)")
+            twist_cmd.ranges.ang_vel_z = (0.0, 0.0)  # No rotation (zero angular velocity)
+            print("[Config] Forcing forward-only velocity (lin_vel_x: 0.5-1.5 m/s, ang_vel_z: 0.0)")
     
     # Disable training-time torque randomization
     if getattr(env_cfg, "events", None) is not None:
