@@ -31,6 +31,8 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 import torch
+from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.spatial.distance import pdist
 
 # ---------------------------------------------------------------------------
 # 1. Humanoid domain: symmetric actuator groups + per-group catalog.
@@ -85,10 +87,25 @@ class CodesignConfig:
   joint_order: list[str]
   tau_obs_range: tuple[float, float] = TAU_OBS_RANGE
   # Hardware-cost weights (objective 2). Soft constraint to prefer 2-3 motor types.
-  w_count: float = 0.5  # Penalty for having more than 3 distinct motor types
-  w_torque: float = 1.0  # Main cost: minimize total torque capacity
+  w_count: float = 0.5  # Diversity penalty: cost per unique motor type considered
+  w_torque: float = 1.0  # Capacity penalty: cost per unit of total torque
   tau_ref: float = 90.0
   """Reference torque (Nm) used to normalize the cumulative-torque term."""
+  w_motor_type_penalty: float = 50.0
+  """Penalty multiplier for motor types above 3. Extremely strong to enforce 2-3 types.
+  
+  Penalty = max(0, n_types - 3) * w_motor_type_penalty
+  
+  Examples with w=50:
+    n_types=2: penalty = 0        (cost ≈ 10-15)
+    n_types=3: penalty = 0        (cost ≈ 10-15)
+    n_types=4: penalty = 50       (cost ≈ 60-65)
+    n_types=5: penalty = 100      (cost ≈ 110-115)
+    n_types=6: penalty = 150      (cost ≈ 160-165)
+  
+  This makes designs with >3 types Pareto-dominated, as the ~0.05 reward difference
+  cannot overcome 50-150 cost difference.
+  """
 
 
 # ---------------------------------------------------------------------------
@@ -105,18 +122,51 @@ def group_var_names(group: ActuatorGroup) -> tuple[str]:
 
 
 def count_motor_types(genome: dict[str, float], cfg: CodesignConfig) -> int:
-  """Count distinct motor types by clustering torque values.
+  """Count distinct motor types using hierarchical clustering.
 
-  Uses coarse rounding (1 decimal) to group similar torques into same type.
-  This accounts for manufacturing tolerances and simplifies BOM.
+  Uses hierarchical agglomerative clustering with a distance threshold to adaptively
+  group similar torques into the same motor type. This is more flexible than fixed
+  rounding because it:
+    1. Groups similar values regardless of their absolute values
+    2. Counts "natural" clusters rather than arbitrary thresholds
+    3. Scales better across the full [5, 90] Nm range
+
+  Distance threshold: 2.0 Nm means torques within ±2.0 Nm of each other cluster.
+
+  Examples:
+    τ = [80.1, 79.9, 51.0, 49.5, 25.0]
+    → With threshold 2.0:
+       * 80.1, 79.9 cluster together (distance 0.2 < 2.0) → Type 1
+       * 51.0, 49.5 cluster together (distance 1.5 < 2.0) → Type 2
+       * 25.0 alone → Type 3
+    → count: 3 types (natural clustering!)
+
+    τ = [80.0, 70.0, 50.0, 40.0, 30.0, 20.0]
+    → All inter-group distances > 2.0, so no merging
+    → count: 6 types
+
+  Algorithm:
+    1. Build hierarchical clustering dendrogram of 6 tau values
+    2. Cut dendrogram at distance threshold (2.0 Nm)
+    3. Count resulting clusters
   """
-  seen_taus = set()
-  for group in cfg.groups:
-    (tau_name,) = group_var_names(group)
-    tau = float(genome[tau_name])
-    # Round to 1 decimal for coarse clustering (e.g., 80.3, 80.7 -> both ~80)
-    seen_taus.add(round(tau, 1))
-  return len(seen_taus)
+  taus = np.array([float(genome[f"tau_{group.name}"]) for group in cfg.groups]).reshape(
+    -1, 1
+  )  # Reshape for scipy
+
+  # Hierarchical clustering (single linkage is sensitive, complete is robust)
+  if len(taus) <= 1:
+    return len(taus)
+
+  # Compute pairwise distances and build dendrogram
+  distances = pdist(taus, metric="euclidean")
+  linkage_matrix = linkage(distances, method="complete")
+
+  # Cut at threshold: 2.0 Nm means "same type if within ±2.0"
+  # (Complete linkage: max distance between any pair in cluster)
+  cluster_labels = fcluster(linkage_matrix, t=2.0, criterion="distance")
+
+  return len(np.unique(cluster_labels))
 
 
 def decode_individual(
@@ -577,9 +627,14 @@ def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
       # Cost function with soft penalty for excess motor types
       f_cost = []
       for (n_choices, cum_tau), n_types in zip(costs, n_motor_types):
+        # Base cost: diversity (number of unique motor models) + total capacity
         base_cost = cfg.w_count * n_choices + cfg.w_torque * (cum_tau / cfg.tau_ref)
-        # Penalty: 2.0 per motor type above 3 (tunable)
-        excess_penalty = max(0.0, float(n_types - 3)) * 2.0
+
+        # STRONG penalty: strongly discourage >3 types so Pareto front naturally
+        # evolves toward 2-3 types. Multiplier must exceed typical reward variance.
+        # E.g., if reward ranges ~0.05-0.1 and cost ~5-15, penalty must be ~10+ to
+        # make "4 types" designs Pareto-dominated by "3 types" designs.
+        excess_penalty = max(0.0, float(n_types - 3)) * cfg.w_motor_type_penalty
         f_cost.append(base_cost + excess_penalty)
 
       out["F"] = np.column_stack([f_perf, np.array(f_cost, dtype=np.float64)])
