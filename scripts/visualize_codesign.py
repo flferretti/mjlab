@@ -59,7 +59,9 @@ def main():
         return 1
 
     F, X, groups = load_pareto_set(args.pareto)
-    best_idx = np.argmax(F[:, 0])
+    # F[:, 0] = -performance (stored negative in GA for minimization)
+    # Higher reward = more negative F[0], so use argmin
+    best_idx = np.argmin(F[:, 0])
 
     # Create output directory
     output_dir = Path(args.output_dir)
@@ -88,7 +90,7 @@ def main():
         print("STEP 2: Generating video of best design walking...")
         print("="*70)
         
-        best_reward = F[best_idx, 0]
+        best_reward = -F[best_idx, 0]  # F[0] = -performance; convert back to positive
         best_cost = F[best_idx, 1]
         print(f"\n🏆 Best Design: #{best_idx}")
         print(f"   Reward: {best_reward:.4f}")

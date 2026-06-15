@@ -81,12 +81,16 @@ def load_pareto_set(path: str) -> tuple[np.ndarray, np.ndarray, list[str]]:
 
 
 def select_design(F: np.ndarray, criteria: str = "reward") -> int:
-    """Select a design from the Pareto set."""
+    """Select a design from the Pareto set.
+    
+    Note: F[:, 0] = -performance (stored negative in GA for minimization).
+    Higher reward = lower F[0] value, so use argmin for "reward" criteria.
+    """
     if criteria == "reward":
-        idx = np.argmax(F[:, 0])
+        idx = np.argmin(F[:, 0])  # Highest reward = most negative F[0]
     elif criteria == "efficiency":
         ratio = F[:, 0] / (F[:, 1] + 1e-6)
-        idx = np.argmax(ratio)
+        idx = np.argmin(ratio)  # Most negative (best reward) per unit cost
     else:
         raise ValueError(f"Unknown criteria: {criteria}")
     return int(idx)
@@ -120,8 +124,13 @@ def run_validation(
     render: bool = True,
     output_video: str = None,
     task: str = "Mjlab-Velocity-Flat-Gbionics-QDD-MotorCond",
+    forward_only: bool = True,
 ) -> dict:
-    """Run a long rollout with a single design and optionally render video."""
+    """Run a long rollout with a single design and optionally render video.
+    
+    Args:
+        forward_only: If True, command only forward velocity (no backward).
+    """
     device_str = "cuda:0" if torch.cuda.is_available() else "cpu"
     device_torch = torch.device(device_str)
     print(f"[Device] Using {device_str}")
@@ -130,6 +139,15 @@ def run_validation(
     print(f"[Env] Loading {task}...")
     env_cfg = load_env_cfg(task, play=True)
     env_cfg.scene.num_envs = 1
+    
+    # Force forward-only velocity command during validation
+    if forward_only:
+        if hasattr(env_cfg, "commands") and "twist" in env_cfg.commands:
+            twist_cmd = env_cfg.commands["twist"]
+            twist_cmd.ranges.lin_vel_x = (0.5, 1.5)  # Forward only
+            twist_cmd.ranges.ang_vel_z = (-0.0, 0.0)  # No rotation for pure forward
+            print("[Config] Forcing forward-only velocity (lin_vel_x: 0.5-1.5 m/s)")
+    
     # Disable training-time torque randomization
     if getattr(env_cfg, "events", None) is not None:
         env_cfg.events.pop("randomize_motor_tau_max", None)
@@ -315,8 +333,20 @@ def main():
         default="Mjlab-Velocity-Flat-Gbionics-QDD-MotorCond",
         help="Task name.",
     )
+    parser.add_argument(
+        "--forward-only",
+        action="store_true",
+        default=True,
+        help="Force forward-only velocity during validation (default: True).",
+    )
+    parser.add_argument(
+        "--allow-backward",
+        action="store_true",
+        help="Allow backward velocity (overrides --forward-only).",
+    )
 
     args = parser.parse_args()
+    forward_only = not args.allow_backward  # Default True unless --allow-backward
 
     # Load Pareto set
     if not Path(args.pareto).exists():
@@ -327,7 +357,8 @@ def main():
     print(f"\n[Pareto] Loaded {len(X)} designs")
     print(f"\nObjectives (reward, cost):")
     for i, (f, x) in enumerate(zip(F, X)):
-        print(f"  {i}: reward={f[0]:8.3f}, cost={f[1]:7.3f}")
+        reward = -f[0]  # Convert back to positive
+        print(f"  {i}: reward={reward:8.3f}, cost={f[1]:7.3f}")
 
     # Select design
     if args.design_idx is None:
@@ -340,7 +371,8 @@ def main():
             return 1
 
     design = dict(X[idx])
-    reward, cost = F[idx]
+    reward_negated, cost = F[idx]
+    reward = -reward_negated  # F[0] stored as -performance; convert back to positive
     print(f"\nSelected design {idx}:")
     print(f"  Reward: {reward:.3f}")
     print(f"  Cost: {cost:.3f}")
@@ -353,6 +385,7 @@ def main():
         render=args.output_video is not None,
         output_video=args.output_video,
         task=args.task,
+        forward_only=forward_only,
     )
 
     # Print results
