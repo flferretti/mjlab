@@ -286,12 +286,13 @@ def gbionics_qdd_rough_env_cfg(
   cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("root_link",)
   cfg.rewards["angular_momentum"].weight = 0.0
 
-  # Disable gait-shaping rewards — AMP discriminator handles gait style.
+  # Gait-shaping rewards — AMP discriminator handles style, but enable foot clearance
+  # to prevent foot dragging and ensure clean swing phase.
   for reward_name in ["foot_clearance", "foot_slip"]:
     cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
   cfg.rewards["air_time"].weight = 0.0
-  cfg.rewards["foot_clearance"].weight = 0.0
-  cfg.rewards["foot_swing_height"].weight = 0.0
+  cfg.rewards["foot_clearance"].weight = -1.0  # Penalize ground contact during swing
+  cfg.rewards["foot_swing_height"].weight = -1.0  # Penalize low foot trajectories
   cfg.rewards["soft_landing"].weight = 0.0
   cfg.rewards["foot_slip"].weight = 0.0
 
