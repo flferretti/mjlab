@@ -63,7 +63,7 @@ QDD_GROUPS: list[ActuatorGroup] = [
   ActuatorGroup("hip_pitch", ("l_hip_pitch", "r_hip_pitch"), 80.0, (30.0, 150.0)),
   ActuatorGroup("hip_roll", ("l_hip_roll", "r_hip_roll"), 80.0, (30.0, 150.0)),
   ActuatorGroup("hip_yaw", ("l_hip_yaw", "r_hip_yaw"), 40.0, (10.0, 100.0)),
-  ActuatorGroup("knee", ("l_knee", "r_knee"), 80.0, (30.0, 150.0)),
+  ActuatorGroup("knee", ("l_knee", "r_knee"), 80.0, (30.0, 180.0)),  # Increased to Type 3 capacity
   ActuatorGroup("ankle_pitch", ("l_ankle_pitch", "r_ankle_pitch"), 50.0, (15.0, 120.0)),
   ActuatorGroup("ankle_roll", ("l_ankle_roll", "r_ankle_roll"), 17.0, (5.0, 80.0)),
 ]
