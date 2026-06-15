@@ -306,10 +306,101 @@ class FlatActorPolicy(torch.nn.Module):
     return self.mlp(latent)
 
 
+class OnnxPolicy(torch.nn.Module):
+  """Wrap an ONNX policy for inference on mjlab.
+
+  Handles dimension mismatch between IsaacSim training (177 obs) and mjlab (168 obs)
+  by zero-padding or truncating observations as needed.
+
+  Example:
+    policy = OnnxPolicy("policy_62000.onnx")
+    obs = torch.zeros(32, 168)  # 32 envs, 168 obs dim (mjlab)
+    actions = policy(obs)  # (32, 12)
+  """
+
+  def __init__(self, onnx_path: str, device: str = "cpu") -> None:
+    super().__init__()
+    import onnxruntime as rt
+
+    self.onnx_path = onnx_path
+    self.device = device
+    self._sess = rt.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+    self._input_name = self._sess.get_inputs()[0].name
+    self._output_name = self._sess.get_outputs()[0].name
+    self._input_shape = self._sess.get_inputs()[0].shape
+
+    # ONNX expects [1, onnx_obs_dim], mjlab provides [batch, 168]
+    # Extract expected obs dimension from ONNX model
+    self._onnx_obs_dim = int(self._input_shape[1])
+    print(
+      f"[OnnxPolicy] Loaded {onnx_path}: expects obs_dim={self._onnx_obs_dim}, "
+      f"batch_size={self._input_shape[0]}"
+    )
+
+  def _adapt_obs(self, obs: torch.Tensor) -> np.ndarray:
+    """Convert mjlab obs (batch, 168) to ONNX obs (batch, onnx_obs_dim).
+
+    If mjlab obs_dim < onnx_obs_dim: pad with zeros.
+    If mjlab obs_dim > onnx_obs_dim: truncate.
+    """
+    mjlab_obs_dim = obs.shape[-1]
+    if mjlab_obs_dim == self._onnx_obs_dim:
+      return obs.cpu().numpy().astype(np.float32)
+
+    if mjlab_obs_dim < self._onnx_obs_dim:
+      # Pad with zeros
+      batch_size = obs.shape[0]
+      padded = torch.zeros(
+        batch_size, self._onnx_obs_dim, device=obs.device, dtype=obs.dtype
+      )
+      padded[:, :mjlab_obs_dim] = obs
+      return padded.cpu().numpy().astype(np.float32)
+    else:
+      # Truncate (less likely but possible)
+      return obs[:, : self._onnx_obs_dim].cpu().numpy().astype(np.float32)
+
+  def forward(self, obs: torch.Tensor) -> torch.Tensor:
+    """Inference on a batch of observations.
+
+    Args:
+      obs: (batch_size, 168) flat observation tensor (mjlab format)
+
+    Returns:
+      actions: (batch_size, 12) action tensor
+    """
+    batch_size = obs.shape[0]
+    obs_adapted = self._adapt_obs(obs)
+
+    # ONNX inference processes one at a time if shape is [1, ...]
+    # For batches, reshape to (batch, obs_dim) or call in loop
+    actions_list = []
+    for i in range(batch_size):
+      obs_single = obs_adapted[i : i + 1]  # (1, obs_dim)
+      action = self._sess.run([self._output_name], {self._input_name: obs_single})[0]
+      actions_list.append(action[0])  # Remove batch dim
+
+    actions_np = np.stack(actions_list, axis=0)
+    return torch.from_numpy(actions_np).to(obs.device).to(obs.dtype)
+
+
 def _load_mjlab_policy_module(
   task: str, policy_path: str, device: str
 ) -> torch.nn.Module:
-  """Load either a TorchScript policy or a standard rsl_rl checkpoint."""
+  """Load a policy: ONNX, TorchScript, or rsl_rl checkpoint.
+
+  Args:
+    task: environment task name (used to load runner config)
+    policy_path: path to .onnx, .pt, or .jit file
+    device: "cpu" or "cuda"
+
+  Returns:
+    A torch.nn.Module that accepts flat observation tensors
+  """
+  # Try ONNX first (easiest, no environment needed)
+  if policy_path.endswith(".onnx"):
+    return OnnxPolicy(policy_path, device=device).eval()
+
+  # Try TorchScript next
   try:
     return torch.jit.load(policy_path, map_location=device).eval()
   except (RuntimeError, ValueError) as exc:
@@ -317,6 +408,7 @@ def _load_mjlab_policy_module(
     if "constants.pkl" not in msg and "PytorchStreamReader" not in msg:
       raise
 
+  # Fall back to rsl_rl checkpoint (requires environment setup)
   import mjlab.tasks  # noqa: F401
 
   from mjlab.envs import ManagerBasedRlEnv
