@@ -53,8 +53,19 @@ def gbionics_gene01_nohands_flat_env_cfg(
 
   # -- Scene / Robot -----------------------------------------------------
   cfg.scene.entities = {"robot": get_gene01_nohands_robot_cfg()}
+  # Ensure the "flat" variant actually uses a plane terrain.
+  assert cfg.scene.terrain is not None
+  cfg.scene.terrain.terrain_type = "plane"
+  cfg.scene.terrain.terrain_generator = None
+  cfg.curriculum.pop("terrain_levels", None)
+  cfg.terminations.pop("out_of_terrain_bounds", None)
+
   cfg.viewer.origin_type = ViewerConfig.OriginType.ASSET_ROOT
   cfg.viewer.entity_name = "robot"
+  # Use a higher, steeper follow view to avoid shallow-angle ground clipping artifacts.
+  cfg.viewer.distance = 4.0
+  cfg.viewer.elevation = -18.0
+  cfg.viewer.azimuth = 105.0
 
   # Set raycast sensor frame to Gene01 root link (torso).
   for sensor in cfg.scene.sensors or ():
