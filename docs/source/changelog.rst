@@ -25,6 +25,9 @@ Added
 Changed
 ^^^^^^^
 
+- Co-design GA now defaults to a walkability score objective instead of raw
+  task reward. Use ``--objective reward`` to restore the old fitness, or
+  ``--objective amp`` for discriminator-based alignment.
 - Bumped ``rsl-rl-lib`` from 5.0.1 to 5.2.0. This brings ``torch.compile`` support for
   PPO and Distillation, and optional std clamping and constant std in
   ``GaussianDistribution``. No code changes required on the mjlab side.
@@ -33,6 +36,31 @@ Changed
   ``debug_vis=True`` to re-enable them. The sites inflated ``nsite`` and
   caused a measurable slowdown in the per-step ``site_local_to_global``
   kernel (:issue:`942`).
+- Co-design result plots now use a wider torque-clustering threshold so near-
+  identical torque limits are not split into fake motor types. The plotting
+  script also generates a clustering plot for the best design so the torque
+  grouping is visible directly.
+- Co-design visualization/validation now defaults to cost-penalized selection
+  (reward-per-cost efficiency) when choosing a single design from the Pareto
+  set. Reward-only selection remains available via ``--criteria reward``.
+  Efficiency mode now applies a reward floor (default ``0.97 * max_reward``)
+  before maximizing reward-per-cost, to avoid selecting cheap non-walking designs.
+- ``scripts/sim2sim.py`` now supports gb-rl blind-policy observation packing
+  (auto-detected from ONNX input size) in addition to the original mjlab-168
+  layout. For IsaacLab-style ONNX models, this removes the old zero-padding
+  fallback and reconstructs the expected history-based input blocks, including
+  optional ``motor_tau_max`` features when required by the ONNX input size.
+  Added ``--tau-obs-range`` and ``--tau-obs-nm`` CLI options to control torque
+  observation normalization and explicit per-joint torque descriptors.
+- ``scripts/sim2sim.py --headless`` can now export rollout videos via
+  ``--video-path`` (with optional FPS/size/camera controls). If requested
+  resolution exceeds the model's offscreen framebuffer, it now auto-clamps to
+  the maximum valid size instead of failing.
+- Headless sim2sim video now defaults to a free camera that follows the robot
+  from farther back for more readable gait videos. Added follow-camera controls:
+  ``--no-video-follow-subject``, ``--video-follow-distance``,
+  ``--video-follow-height``, ``--video-follow-smoothing``,
+  ``--video-follow-azimuth``, and ``--video-follow-elevation``.
 - Task package load failures during ``mjlab`` import now print the full
   traceback (and the entry point's module path) to ``stderr`` instead of
   just the exception message, making it easier to pinpoint the source of
@@ -48,6 +76,17 @@ Changed
 Fixed
 ^^^^^
 
+- Gene01 Nohands velocity task now sets a valid viewer body target
+  (``torso_1``), so enabling training video no longer fails with
+  ``entity_name/body_name required for ASSET_BODY origin type``.
+- Co-design validation and video generation now screen Pareto candidates by
+  rollout walkability before honoring reward/efficiency selection. If the
+  initial reward-best design does not actually move and stay up, the scripts
+  fall back to the best walkable candidate instead of rendering a dead robot.
+- Fixed co-design plotting to select the true best-by-reward design
+  (``argmin(F[:, 0])`` / max reward after sign inversion) instead of the
+  worst-performing one. Reward values and best-design highlights are now
+  consistently shown in positive "higher is better" form.
 - Fixed ``ContactSensor.compute_first_contact`` and ``compute_first_air``
   occasionally missing events when a contact began or ended right at the
   last physics substep of a control step. ``current_contact_time`` /

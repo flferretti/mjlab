@@ -1,3 +1,21 @@
+from mjlab.asset_zoo.robots.gbionics_gene01_nohands.gene_constants import (
+  GENE01_NOHANDS_ACTION_SCALE as GENE01_NOHANDS_ACTION_SCALE,
+)
+from mjlab.asset_zoo.robots.gbionics_gene01_nohands.gene_constants import (
+  GENE01_NOHANDS_ACTUATED_JOINTS as GENE01_NOHANDS_ACTUATED_JOINTS,
+)
+from mjlab.asset_zoo.robots.gbionics_gene01_nohands.gene_constants import (
+  X6_60_JOINTS as X6_60_JOINTS,
+)
+from mjlab.asset_zoo.robots.gbionics_gene01_nohands.gene_constants import (
+  X8_120_JOINTS as X8_120_JOINTS,
+)
+from mjlab.asset_zoo.robots.gbionics_gene01_nohands.gene_constants import (
+  X10_200_JOINTS as X10_200_JOINTS,
+)
+from mjlab.asset_zoo.robots.gbionics_gene01_nohands.gene_constants import (
+  get_gene01_nohands_robot_cfg as get_gene01_nohands_robot_cfg,
+)
 from mjlab.asset_zoo.robots.gbionics_qdd.qdd_constants import (
   QDD_ACTION_OFFSET as QDD_ACTION_OFFSET,
 )

@@ -1,0 +1,331 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="gene01_nohands">
+  <compiler angle="radian" meshdir="../../meshes" />
+  <asset>
+    <mesh name="sim_gene01_torso_1" content_type="model/stl" file="sim_gene01_torso_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_torso_2" content_type="model/stl" file="sim_gene01_torso_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_hip_1" content_type="model/stl" file="sim_gene01_l_hip_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_hip_1" content_type="model/stl" file="sim_gene01_r_hip_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_hip_2" content_type="model/stl" file="sim_gene01_r_hip_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_upper_leg" content_type="model/stl" file="sim_gene01_r_upper_leg.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_lower_leg" content_type="model/stl" file="sim_gene01_r_lower_leg.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_ankle_1" content_type="model/stl" file="sim_gene01_r_ankle_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_crank_1" content_type="model/stl" file="sim_gene01_r_crank_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_crank_2" content_type="model/stl" file="sim_gene01_r_crank_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_ring_2" content_type="model/stl" file="sim_gene01_r_ring_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_rod_2" content_type="model/stl" file="sim_gene01_r_rod_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_ring_1" content_type="model/stl" file="sim_gene01_r_ring_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_rod_1" content_type="model/stl" file="sim_gene01_r_rod_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_ankle_2" content_type="model/stl" file="sim_gene01_r_ankle_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_foot_lowpoly" content_type="model/stl" file="sim_gene01_r_foot_lowpoly.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_hip_2" content_type="model/stl" file="sim_gene01_l_hip_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_upper_leg" content_type="model/stl" file="sim_gene01_l_upper_leg.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_lower_leg" content_type="model/stl" file="sim_gene01_l_lower_leg.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_ankle_1" content_type="model/stl" file="sim_gene01_l_ankle_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_crank_1" content_type="model/stl" file="sim_gene01_l_crank_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_crank_2" content_type="model/stl" file="sim_gene01_l_crank_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_ring_2" content_type="model/stl" file="sim_gene01_l_ring_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_rod_2" content_type="model/stl" file="sim_gene01_l_rod_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_ring_1" content_type="model/stl" file="sim_gene01_l_ring_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_rod_1" content_type="model/stl" file="sim_gene01_l_rod_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_ankle_2" content_type="model/stl" file="sim_gene01_l_ankle_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_foot_lowpoly" content_type="model/stl" file="sim_gene01_l_foot_lowpoly.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_chest" content_type="model/stl" file="sim_gene01_chest.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_shoulder_1" content_type="model/stl" file="sim_gene01_l_shoulder_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_shoulder_1" content_type="model/stl" file="sim_gene01_r_shoulder_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_shoulder_2" content_type="model/stl" file="sim_gene01_r_shoulder_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_upperarm" content_type="model/stl" file="sim_gene01_r_upperarm.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_forearm" content_type="model/stl" file="sim_gene01_r_forearm.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_wrist_1" content_type="model/stl" file="sim_gene01_r_wrist_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_wrist_2" content_type="model/stl" file="sim_gene01_r_wrist_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_wrist_crank_1" content_type="model/stl" file="sim_gene01_r_wrist_crank_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_wrist_crank_2" content_type="model/stl" file="sim_gene01_r_wrist_crank_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_wrist_3" content_type="model/stl" file="sim_gene01_r_wrist_3.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_wrist_cross_1" content_type="model/stl" file="sim_gene01_r_wrist_cross_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_wrist_cross_2" content_type="model/stl" file="sim_gene01_r_wrist_cross_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_wrist_rod_2" content_type="model/stl" file="sim_gene01_r_wrist_rod_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_r_wrist_rod_1" content_type="model/stl" file="sim_gene01_r_wrist_rod_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_shoulder_2" content_type="model/stl" file="sim_gene01_l_shoulder_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_upperarm" content_type="model/stl" file="sim_gene01_l_upperarm.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_forearm" content_type="model/stl" file="sim_gene01_l_forearm.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_wrist_1" content_type="model/stl" file="sim_gene01_l_wrist_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_wrist_2" content_type="model/stl" file="sim_gene01_l_wrist_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_wrist_crank_1" content_type="model/stl" file="sim_gene01_l_wrist_crank_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_wrist_crank_2" content_type="model/stl" file="sim_gene01_l_wrist_crank_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_wrist_3" content_type="model/stl" file="sim_gene01_l_wrist_3.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_wrist_cross_1" content_type="model/stl" file="sim_gene01_l_wrist_cross_1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_wrist_cross_2" content_type="model/stl" file="sim_gene01_l_wrist_cross_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_wrist_rod_2" content_type="model/stl" file="sim_gene01_l_wrist_rod_2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="sim_gene01_l_wrist_rod_1" content_type="model/stl" file="sim_gene01_l_wrist_rod_1.stl" scale="0.001 0.001 0.001" />
+  </asset>
+  <worldbody>
+    <body name="torso_1">
+      <inertial pos="0.00133474 -1.32644e-05 0.0218008" quat="0.700675 0.701622 -0.0910889 0.0921081" mass="6.07683" diaginertia="0.0507722 0.0469397 0.017043" />
+      <joint name="floating_base_joint" type="free" />
+      <geom type="mesh" mesh="sim_gene01_torso_1" contype="0" conaffinity="0" />
+      <body name="torso_2" pos="0 0 0.161" quat="1 0 0 0">
+        <inertial pos="-0.0156033 -5.40072e-05 -0.0171571" quat="0.67378 -0.221684 -0.22455 0.668172" mass="2.30786" diaginertia="0.00571983 0.00496454 0.00361136" />
+        <joint name="torso_yaw" pos="0 0 0" axis="0 0 1" range="-0.785398 0.785398" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0577" />
+        <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_torso_2" contype="2" conaffinity="5" />
+        <body name="chest" pos="-0.053 0 0">
+          <inertial pos="0.0431573 0.000189942 0.162975" quat="0.995476 0.00355052 -0.0949402 0.00100016" mass="11.359" diaginertia="0.172987 0.155884 0.0890161" />
+          <joint name="torso_roll" pos="0 0 0" axis="1 0 0" range="-0.785398 0.785398" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0577" />
+          <geom type="mesh" mesh="sim_gene01_chest" contype="2" conaffinity="5" />
+          <body name="l_shoulder_1" pos="0.0272776 0.106003 0.235236" quat="0.969332 0.208229 -0.0274138 -0.127615">
+            <inertial pos="0.0144051 0.101849 4.3421e-05" quat="0.696574 0.701623 -0.0253378 -0.147877" mass="1.32103" diaginertia="0.00318912 0.00317986 0.00112672" />
+            <joint name="l_shoulder_pitch" pos="0 0 0" axis="0 1 0" range="-2.35619 0.785398" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0577" />
+            <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_shoulder_1" contype="1" conaffinity="6" />
+            <body name="l_shoulder_2" pos="0.0500248 0.123987 1.31115e-05" quat="0.997892 -0.0649015 -0.000171739 -0.000195831">
+              <inertial pos="-0.0353104 -7.45315e-05 -0.0917563" quat="0.691813 0.0885964 0.0840724 0.711673" mass="1.35903" diaginertia="0.0024925 0.00243733 0.00156598" />
+              <joint name="l_shoulder_roll" pos="0 0 0" axis="-1 0 0" range="-2.61799 0.261799" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+              <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_shoulder_2" contype="1" conaffinity="6" />
+              <body name="l_upper_arm" pos="-0.037 0 -0.127" quat="1 0 0 0">
+                <inertial pos="-0.000333481 0.000761953 -0.0964643" quat="0.999776 0.00806116 -0.00325385 -0.0192937" mass="1.3025" diaginertia="0.00348806 0.00340567 0.00118983" />
+                <joint name="l_shoulder_yaw" pos="0 0 0" axis="0 0 -1" range="-1.8326 1.8326" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+                <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_upperarm" contype="1" conaffinity="6" />
+                <body name="l_forearm" pos="0 0.0295 -0.1245" quat="1 0 0 0">
+                  <inertial pos="-0.00258873 -0.0308511 -0.146264" quat="0.998449 -0.0139778 0.00723199 -0.053404" mass="2.196" diaginertia="0.0127529 0.0126436 0.00184909" />
+                  <joint name="l_elbow" pos="0 0 0" axis="0 1 0" range="-1.91986 0.0872665" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+                  <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_forearm" contype="1" conaffinity="6" />
+                  <geom pos="2.00697e-09 -0.02945 -0.1067" quat="1 1.1636e-08 2.01542e-08 -2.20678e-06" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_wrist_1" contype="1" conaffinity="6" />
+                  <geom pos="-4.93156e-08 -0.03945 -0.285" quat="0.999048 -8.46421e-08 -0.0436233 -2.20518e-06" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_wrist_2" contype="1" conaffinity="6" />
+                  <geom pos="-0.00675674 -0.0029697 -0.14684" quat="0.995277 -0.0389779 -0.0669868 -0.0584535" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_wrist_crank_1" contype="1" conaffinity="6" />
+                  <geom pos="-0.0299633 -0.0379499 -0.205382" quat="0.703174 -0.061054 -0.0744862 0.704465" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_wrist_crank_2" contype="1" conaffinity="6" />
+                  <geom pos="-4.93156e-08 -0.03945 -0.285" quat="0.999048 2.44649e-07 -0.0436233 -2.19081e-06" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_wrist_3" contype="1" conaffinity="6" />
+                  <geom pos="0.0241229 -0.0125476 -0.285238" quat="0.998372 -0.0373883 -0.043042 -0.00183552" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_wrist_cross_1" contype="1" conaffinity="6" />
+                  <geom pos="-0.0237091 -0.0125261 -0.289371" quat="0.997612 -0.0539818 -0.0430055 -0.00255087" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_wrist_cross_2" contype="1" conaffinity="6" />
+                  <geom pos="-0.0237091 -0.0125261 -0.289371" quat="0.997612 -0.0539818 -0.0430016 -0.00255109" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_wrist_rod_2" contype="1" conaffinity="6" />
+                  <geom pos="0.0241229 -0.0125476 -0.285238" quat="0.998372 -0.0373882 -0.043038 -0.00183567" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_wrist_rod_1" contype="1" conaffinity="6" />
+                  <site name="l_wrist_crank_2" pos="-0.029963293852084138 -0.037949857081026564 -0.20538161695216034" quat="0.7031742114312306 -0.061053974249018976 -0.07448621907522286 0.7044645085271116" />
+                  <site name="l_hand" pos="0.002012370825738534 -0.03944998060025139 -0.30799998438691917" quat="0.9990480500524528 2.446491980058511e-07 -0.043623315801670386 -2.1908060873869115e-06" />
+                  <site name="l_wrist_rod_1" pos="0.024122878243320944 -0.012547553581075845 -0.28523848284489456" quat="0.9983719131827243 -0.03738824429815533 -0.04303803530226191 -0.0018356670421019715" />
+                  <site name="l_wrist_cross_1" pos="0.02412287824332096 -0.012547553581075947 -0.28523848284489445" quat="0.9983717437048912 -0.037388251526138415 -0.043041966572947676 -0.0018355198190746734" />
+                  <site name="l_wrist_1" pos="2.006969326839858e-09 -0.029449991618085702 -0.10669999996081225" quat="0.9999999999975648 1.1635974590589096e-08 2.0154191832210858e-08 -2.206777697185388e-06" />
+                  <site name="l_wrist_rod_2" pos="-0.023709076817371513 -0.01252611538506954 -0.28937124698972083" quat="0.9976123087432812 -0.05398182248669124 -0.043001584216392025 -0.0025510860032584965" />
+                  <site name="l_wrist_crank_sph_1" pos="0.026427316711109084 0.0031735599195208053 -0.14304510404525445" quat="0.995277189202155 -0.03897792361435127 -0.06698678025115977 -0.05845348061625147" />
+                  <site name="l_wrist_crank_sph_2" pos="-0.039406950807211315 -0.005455733807598673 -0.20658548405659968" quat="0.7031742114312309 -0.06105397424901937 -0.07448621907522328 0.7044645085271113" />
+                  <site name="l_wrist_2" pos="-4.9315560127182e-08 -0.03944998747332501 -0.2850000002126041" quat="0.9990480500524791 -8.46421059353031e-08 -0.04362331580094587 -2.2051845536066694e-06" />
+                  <site name="l_wrist_crank_1" pos="-0.006756737787118255 -0.0029697041317012576 -0.1468395120239891" quat="0.995277189202155 -0.03897792361435226 -0.0669867802511597 -0.05845348061625095" />
+                  <site name="l_wrist_rod_sph_2" pos="-0.03940690884350906 -0.005455779350496941 -0.20658570727720293" quat="0.7031745738149762 -0.06105441249998534 -0.07448585775704 0.7044641470285101" />
+                  <site name="l_wrist_rod_sph_1" pos="0.026382596414184868 0.0028258409063866754 -0.14300587436245007" quat="0.995262106310844 -0.03899072184007513 -0.06721044887664883 -0.05844500760451242" />
+                  <site name="l_wrist_3" pos="-4.931556014791994e-08 -0.03944998747332512 -0.2850000002126041" quat="0.9990480500524528 2.446491980058511e-07 -0.043623315801670386 -2.1908060873869115e-06" />
+                  <site name="l_wrist_cross_2" pos="-0.023709077346377512 -0.01252611538500241 -0.28937124703540723" quat="0.9976121400006474 -0.05398183123850838 -0.04300550035850144 -0.002550874042538695" />
+                </body>
+              </body>
+            </body>
+          </body>
+          <body name="r_shoulder_1" pos="0.0272776 -0.106003 0.235236" quat="0.969332 -0.208229 -0.0274138 0.127615">
+            <inertial pos="0.0145942 -0.1016 0.00010596" quat="0.688367 0.710074 0.0295286 0.145164" mass="1.31473" diaginertia="0.00318265 0.00316306 0.00110189" />
+            <joint name="r_shoulder_pitch" pos="0 0 0" axis="0 1 0" range="-2.35619 0.785398" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0577" />
+            <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_shoulder_1" contype="4" conaffinity="3" />
+            <body name="r_shoulder_2" pos="0.05 -0.124 0" quat="0.997859 0.0654031 0 0">
+              <inertial pos="-0.0353037 -8.53136e-05 -0.0916318" quat="0.69003 0.0893016 0.0835628 0.713373" mass="1.35363" diaginertia="0.00248415 0.00242794 0.00155885" />
+              <joint name="r_shoulder_roll" pos="0 0 0" axis="1 0 0" range="-2.61799 0.261799" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+              <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_shoulder_2" contype="4" conaffinity="3" />
+              <body name="r_upper_arm" pos="-0.037 0 -0.127" quat="1 0 0 0">
+                <inertial pos="-0.000135071 -9.78389e-05 -0.0973333" quat="0.999884 -0.00248479 -0.00739798 -0.0130713" mass="1.31268" diaginertia="0.00349196 0.00336793 0.00123086" />
+                <joint name="r_shoulder_yaw" pos="0 0 0" axis="0 0 1" range="-1.8326 1.8326" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+                <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_upperarm" contype="4" conaffinity="3" />
+                <body name="r_forearm" pos="0 -0.0295 -0.1245" quat="1 -4.35219e-12 0 0">
+                  <inertial pos="0.00275591 0.0313351 -0.15356" quat="0.692813 -6.16046e-05 -0.0108386 0.721036" mass="2.21164" diaginertia="0.0111595 0.0108816 0.00185674" />
+                  <joint name="r_elbow" pos="0 0 0" axis="0 1 8.70427e-12" range="-1.91986 0.0872665" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+                  <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_forearm" contype="4" conaffinity="3" />
+                  <geom pos="0 0.02945 -0.106" quat="1 0 0 0" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_wrist_1" contype="4" conaffinity="3" />
+                  <geom pos="0 0.03945 -0.285" quat="0.99905 0 -0.0435802 0" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_wrist_2" contype="4" conaffinity="3" />
+                  <geom pos="0.00675686 0.00296974 -0.14684" quat="0.0608375 0.00282629 -0.0351371 0.997525" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_wrist_crank_1" contype="4" conaffinity="3" />
+                  <geom pos="0.0299633 0.03795 -0.205382" quat="0.706946 -0.120072 0.0150965 -0.696838" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_wrist_crank_2" contype="4" conaffinity="3" />
+                  <geom pos="0 0.03945 -0.285" quat="0.99905 0 -0.0435802 0" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_wrist_3" contype="4" conaffinity="3" />
+                  <geom pos="-0.023704 0.0125527 -0.289434" quat="0.998398 0.0361298 -0.0435169 0.0015773" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_wrist_cross_1" contype="4" conaffinity="3" />
+                  <geom pos="0.0241137 0.0125527 -0.285254" quat="0.997608 0.0536856 -0.0434762 0.00234373" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_wrist_cross_2" contype="4" conaffinity="3" />
+                  <geom pos="0.0241137 0.0125527 -0.285254" quat="0.997605 0.0536858 -0.0435574 0.00233936" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_wrist_rod_2" contype="4" conaffinity="3" />
+                  <geom pos="-0.023704 0.0125527 -0.289434" quat="0.998398 0.0361298 -0.0435186 0.00157724" type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_wrist_rod_1" contype="4" conaffinity="3" />
+                  <site name="r_wrist_2" pos="-2.5904679790134167e-13 0.03945000000006501 -0.2849999999999369" quat="0.9990499297706554 -1.9850319169915336e-14 -0.04358024581445609 2.7840468953347382e-15" />
+                  <site name="r_wrist_rod_sph_2" pos="0.040554749227474304 0.005811468909395951 -0.2025162079039516" quat="0.7069426885617706 -0.12008727679330194 0.015080810278932027 -0.6968383242924825" />
+                  <site name="r_wrist_crank_sph_2" pos="0.040554749228025384 0.005811468909463387 -0.20251620790290054" quat="0.7069456100584218 -0.12007244340123994 0.015096503530108813 -0.6968375767249835" />
+                  <site name="r_wrist_rod_sph_1" pos="-0.02668962822439127 -0.0028478536480850258 -0.14720356426982942" quat="0.060839737814696856 0.002839026641390608 -0.035134168619392975 0.997524965314549" />
+                  <site name="r_wrist_crank_sph_1" pos="-0.026699888488623306 -0.0028476920941347293 -0.14720461456484202" quat="0.06083750106603744 0.0028262866033118175 -0.03513714435564599 0.9975250330967169" />
+                  <site name="r_wrist_1" pos="-2.6192936708469006e-13 0.029450000000092014 -0.10599999999995047" quat="1.0 -1.9631865577630886e-14 -2.4071022952654207e-14 1.554312234474857e-15" />
+                  <site name="r_wrist_crank_2" pos="0.029963254366630963 0.03795000000005396 -0.205381617990695" quat="0.7069456100584219 -0.12007244340123953 0.015096503530108434 -0.6968375767249834" />
+                  <site name="r_wrist_rod_1" pos="-0.023703977338102703 0.01255269954461683 -0.2894335314101453" quat="0.9983978580915206 0.036129760477607506 -0.04351861295216769 0.0015772421545193504" />
+                  <site name="r_hand" pos="0.002010437029541718 0.039450000000064336 -0.30800015760359517" quat="0.9990499297706554 -1.705346588568794e-14 -0.043580245814456284 2.3563642314353923e-15" />
+                  <site name="r_wrist_cross_2" pos="0.02411369254257394 0.012552674693768365 -0.2852539366504269" quat="0.9976082277871586 0.05368563774011745 -0.043476235850526686 0.002343729521693107" />
+                  <site name="r_wrist_crank_1" pos="0.006756855048134754 0.0029697432819356384 -0.14683951294743455" quat="0.06083750106603744 0.0028262866033118175 -0.03513714435564599 0.9975250330967169" />
+                  <site name="r_wrist_cross_1" pos="-0.02370397733810316 0.01255269954469045 -0.2894335314101397" quat="0.9983979318437949 0.036129757804504795 -0.04351692090497596 0.0015773033858759143" />
+                  <site name="r_wrist_3" pos="-2.5894866983990513e-13 0.03945000000006512 -0.28499999999993725" quat="0.9990499297706554 -1.7075584190749443e-14 -0.043580245814456284 2.8634125673355194e-15" />
+                  <site name="r_wrist_rod_2" pos="0.02411369254254628 0.01255267469435277 -0.2852539366514828" quat="0.9976046866516116 0.05368582828301707 -0.04355741501609049 0.002339360900415389" />
+                </body>
+                <site name="r_upper_arm_taxel_11" pos="0.010837895132196122 -0.05355815611426851 -0.03892406182834418" quat="0.7052030957650527 0.7052031000429335 0.05185162267375795 0.05185162137600396" />
+                <site name="r_upper_arm_taxel_9" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" />
+                <site name="r_upper_arm_taxel_1" pos="0.010907917932137044 -0.0534448007393028 -0.015924061827834457" quat="0.7049300734770886 0.704930077761519 0.055439954528319284 0.05543995325235361" />
+                <site name="r_upper_arm_taxel_5" pos="-0.010949439420359329 -0.053319606776149 0.006075938222606991" quat="0.7046859896910029 0.7046859937149844 -0.05846069605920978 -0.05846069800651678" />
+                <site name="r_upper_arm_taxel_2" pos="0.010973920378101805 -0.05330924943954829 0.006075938172814377" quat="0.7045843139665657 0.7045843182585837 0.05967362535307904 0.0596736241028739" />
+                <site name="r_upper_arm_taxel_10" pos="0.01076745591671099 -0.05364542927880256 -0.06192406182869892" quat="0.7054237138844798 0.7054237181566282 0.04875839353325052 0.04875839221674798" />
+                <site name="r_upper_arm_tof_2" pos="0.0002359593742135152 -0.05595065875384042 0.050375466892344845" quat="0.7084461513265761 0.7057616855880919 0.0014817004850874807 0.0015160442241969184" />
+                <site name="r_upper_arm_taxel_7" pos="-0.011100411089264114 -0.053545905233851054 -0.03892406177838459" quat="0.7052207234133807 0.7052207274560918 -0.05161131967721642 -0.05161132158533514" />
+                <site name="r_upper_arm_taxel_3" pos="0.011179706475647318 -0.05312518624016416 0.027415938173432686" quat="0.7040710288682609 0.7040710331703913 0.0654521455637949 0.06545214434884426" />
+                <site name="r_upper_arm_tof_1" pos="-0.03423300579041269 -0.044589522894563305 0.050375907096162464" quat="0.6822829285434708 0.6549998795595356 -0.23382913208195072 -0.22536437203990492" />
+                <site name="r_upper_arm_tof_3" pos="0.03460748716930666 -0.04429815735796794 0.05037869849495391" quat="0.6813324582971246 0.6539952074130301 0.2365716168292128 0.2282766305656291" />
+                <site name="r_upper_arm_taxel_4" pos="-0.01087643448536027 -0.05317803895604556 0.02741593822327615" quat="0.7042973521415805 0.7042973561530149 -0.06297012638445569 -0.0629701283574799" />
+                <site name="r_upper_arm_taxel_8" pos="-0.011176963283650095 -0.05362145164513221 -0.06192406177865584" quat="0.7053971168965694 0.7053971209459371 -0.04914167808005094 -0.049141679974002435" />
+                <site name="r_upper_arm_taxel_6" pos="-0.01102359094622854 -0.05344348407402699 -0.01592406177795458" quat="0.7049905476322427 0.7049905516666509 -0.05466557234408346 -0.0546655742696957" />
+              </body>
+            </body>
+          </body>
+          <site name="chest_camera_front" pos="0.1844182399975267 -7.150232912285982e-14 0.23056900000007263" quat="0.5000000000001968 0.4999999999999999 0.49999999999980316 0.5000000000000001" />
+          <site name="depth_camera" pos="0.1544506403026876 0.017499998844483892 -0.01745064146133668" quat="-0.2705980284453642 0.6532814913965381 -0.6532814734797312 0.2705980717010893" />
+          <camera name="chest_depth_camera" pos="0.1544506403026876 0.017499998844483892 -0.01745064146133668" quat="-0.6532814913965382 -0.2705980284453642 0.2705980717010893 0.6532814734797313" fovy="60.0" />
+          <site name="chest_imu" pos="0.09959999999989542 0.007700345832498567 0.06779509453619936" quat="0.7071067811894861 -2.3558288653191536e-08 -0.707106781183608 2.3563320294961446e-08" />
+          <site name="rgb_camera" pos="0.15445064030267622 -0.011500001155516046 -0.01745063954116466" quat="-0.2705980284453642 0.6532814913965381 -0.6532814734797312 0.2705980717010893" />
+        </body>
+      </body>
+      <body name="l_hip_1" pos="0.0061 0.07 0" quat="1 0 0 0">
+        <inertial pos="-0.0631137 0.0158786 -0.0779099" quat="0.828651 0.217106 0.357956 0.371579" mass="2.51765" diaginertia="0.00874737 0.00827537 0.00595271" />
+        <joint name="l_hip_pitch" pos="0 0 0" axis="0 1 0" range="-1.95477 0.523599" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.25" />
+        <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_hip_1" contype="1" conaffinity="6" />
+        <body name="l_hip_2" pos="-0.0585 0.0163 -0.09" quat="1 0 0 0">
+          <inertial pos="0.0555811 0.018143 -0.0786529" quat="0.679102 -0.0690425 -0.286065 0.672474" mass="2.44583" diaginertia="0.00658506 0.00647751 0.00410242" />
+          <joint name="l_hip_roll" pos="0 0 0" axis="-1 0 0" range="-0.959931 0.261799" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.25" />
+          <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_hip_2" contype="1" conaffinity="6" />
+          <body name="l_upper_leg" pos="0.06095 0.022 -0.1242" quat="1 0 0 0">
+            <inertial pos="0.00194934 -0.00433907 -0.105103" quat="0.61581 0.0288329 0.0496921 0.785798" mass="5.24853" diaginertia="0.0367121 0.0355138 0.0100246" />
+            <joint name="l_hip_yaw" pos="0 0 0" axis="0 0 -1" range="-1.22173 1.22173" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0577" />
+            <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_upper_leg" contype="1" conaffinity="6" />
+            <body name="l_lower_leg" pos="-0.02855 -0.02245 -0.2658" quat="1 0 0 0">
+              <inertial pos="0.0362856 0.0145932 -0.128088" quat="0.414419 0.0374505 0.00300293 0.90931" mass="4.75938" diaginertia="0.0774774 0.0768699 0.00575335" />
+              <joint name="l_knee" pos="0 0 0" axis="0 1 0" range="-0.0523599 2.35619" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.25" />
+              <geom type="mesh" rgba="1 1 1 1" mesh="sim_gene01_l_lower_leg" contype="1" conaffinity="6" />
+              <body name="l_ankle_1" pos="0.0149861 0.01775 -0.420239" quat="1 0 -1.2125e-07 0">
+                <inertial pos="-0.00408682 0.00027965 -0.0179458" quat="0.67348 0.2085 0.240967 0.666999" mass="0.245451" diaginertia="0.000109833 7.89642e-05 6.12522e-05" />
+                <joint name="l_ankle_pitch" pos="0 0 0" axis="0 1 0" range="-1.0472 0.523599" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_ankle_1" contype="1" conaffinity="6" />
+                <body name="l_ankle_2" pos="0 0 -0.03" quat="1 0 0 0">
+                  <inertial pos="0.0369984 2.8398e-07 -0.0312331" quat="-4.44061e-05 0.737951 -2.68168e-05 0.674855" mass="1.14502" diaginertia="0.00626244 0.00615534 0.00117474" />
+                  <joint name="l_ankle_roll" pos="0 0 0" axis="-1 0 0" range="-0.436332 0.436332" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                  <geom type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_l_ankle_2" contype="1" conaffinity="6" />
+                  <geom pos="0 0 -0.025" quat="1 0 0 0" type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_l_foot_lowpoly" contype="1" conaffinity="6" />
+                  <site name="l_sole_rear" pos="-0.049999999999999996 -2.7755575615626867e-17 -0.061000000000000304" quat="1.0 -6.669591693910217e-30 2.6469779601696886e-23 -2.5240467479161358e-29" />
+                  <site name="l_ankle_sph_1" pos="0.04349999999999964 -0.024000000000000018 0.013999999999999901" quat="1.0 0.0 0.0 -3.081487911019578e-33" />
+                  <site name="l_ankle_sph_2" pos="0.043499999999999636 0.023999999999999976 0.013999999999999901" quat="1.0 0.0 0.0 -3.081487911019578e-33" />
+                  <site name="l_foot" pos="-7.806255641895632e-18 -2.7755575615628914e-17 -0.025000000000000272" quat="1.0 -6.669591693910217e-30 2.6469779601696886e-23 -2.524354896707238e-29" />
+                  <site name="l_sole" pos="-0.015000000000000003 -2.775557561562863e-17 -0.06100000000000025" quat="1.0 -6.669591693910217e-30 2.6469779601696886e-23 -2.5240467479161358e-29" />
+                  <site name="l_sole_front" pos="0.10999999999999997 -2.775557561563494e-17 -0.06100000000000025" quat="1.0 -6.669591693910217e-30 2.6469779601696886e-23 -2.5240467479161358e-29" />
+                </body>
+              </body>
+              <body name="l_crank_1" pos="0.065228 0.01775 -0.0983931" quat="0.689548 0.0959043 0.156598 -0.700573">
+                <inertial pos="0.00843524 0.00226853 -5.74377e-09" quat="0.464458 0.464458 0.533178 0.533178" mass="0.198088" diaginertia="0.000118964 8.82888e-05 4.03384e-05" />
+                <joint name="l_ankle_motor_1" pos="0 0 0" axis="0 -1 0" range="-0.689405 1.24267" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+                <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_crank_1" contype="1" conaffinity="6" />
+                <body name="l_ring_1" pos="0.04 0.02 0" quat="1 0 0 0">
+                  <inertial pos="-1.20706e-09 -1.43119e-09 7.37008e-11" quat="0.707107 0 0 0.707107" mass="0.0132603" diaginertia="6.40814e-07 4.44558e-07 4.44558e-07" />
+                  <joint name="l_rod_1_u_0" pos="0 0 0" axis="0 -1 0" range="-1.74533 1.74533" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                  <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_ring_1" contype="1" conaffinity="6" />
+                  <body name="l_rod_1" pos="0 0 0" quat="1 0 0 0">
+                    <inertial pos="0.0504289 0.00135553 -0.153403" quat="0.980775 -0.0140515 -0.15752 0.114326" mass="0.309901" diaginertia="0.00381339 0.00381339 1.1828e-05" />
+                    <joint name="l_rod_1_u_1" pos="0 0 0" axis="-1 0 0" range="-1.74533 1.74533" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                    <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_rod_1" contype="1" conaffinity="6" />
+                    <site name="l_rod_sph_1" pos="0.10100466865467554 0.0027289612509535863 -0.3071845531223209" quat="0.6895559853867278 -0.0958702800145801 -0.15656482049725703 0.7005775398982803" />
+                  </body>
+                </body>
+              </body>
+              <body name="l_crank_2" pos="0.0578197 0.01775 -0.18307" quat="0.687497 -0.104822 0.165371 0.699294">
+                <inertial pos="0.00843524 -0.00226853 5.74377e-09" quat="0.533178 0.533178 0.464458 0.464458" mass="0.198088" diaginertia="0.000118964 8.82888e-05 4.03384e-05" />
+                <joint name="l_ankle_motor_2" pos="0 0 0" axis="0 1 0" range="-1.2322 0.71384" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+                <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_crank_2" contype="1" conaffinity="6" />
+                <body name="l_ring_2" pos="0.04 -0.02 0" quat="1 0 0 0">
+                  <inertial pos="-1.20706e-09 1.43119e-09 -7.37009e-11" quat="0.707107 0 0 0.707107" mass="0.0132603" diaginertia="6.40814e-07 4.44558e-07 4.44558e-07" />
+                  <joint name="l_rod_2_u_0" pos="0 0 0" axis="0 1 0" range="-1.74533 1.74533" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                  <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_ring_2" contype="1" conaffinity="6" />
+                  <body name="l_rod_2" pos="0 0 0" quat="1 -1.02122e-11 0 0">
+                    <inertial pos="0.0383565 -0.00135333 -0.112103" quat="0.75157 -0.11069 -0.121184 0.638908" mass="0.244243" diaginertia="0.00175184 0.00175183 1.04354e-05" />
+                    <joint name="l_rod_2_u_1" pos="0 0 0" axis="1 0 0" range="-1.74533 1.74533" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                    <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_l_rod_2" contype="1" conaffinity="6" />
+                    <site name="l_rod_sph_2" pos="0.0769110073962523 -0.00272896125083278 -0.22469167707724363" quat="-0.687494983066754 -0.10483185608904946 0.1653803139975939 0.6992927011981647" />
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="r_hip_1" pos="0.0061 -0.07 0">
+        <inertial pos="-0.0631154 -0.0153824 -0.0774939" quat="0.411598 0.351254 0.226027 0.810012" mass="2.51765" diaginertia="0.00869687 0.00825222 0.00597229" />
+        <joint name="r_hip_pitch" pos="0 0 0" axis="0 1 0" range="-1.95477 0.523599" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.25" />
+        <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_hip_1" contype="4" conaffinity="3" />
+        <body name="r_hip_2" pos="-0.0585 -0.0163 -0.09" quat="1 0 0 0">
+          <inertial pos="0.0552926 -0.0182122 -0.0786529" quat="0.63105 -0.28949 -0.0537849 0.71769" mass="2.44583" diaginertia="0.00657907 0.00648846 0.00408442" />
+          <joint name="r_hip_roll" pos="0 0 0" axis="1 0 0" range="-0.959931 0.261799" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.25" />
+          <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_hip_2" contype="4" conaffinity="3" />
+          <body name="r_upper_leg" pos="0.06095 -0.022 -0.1242" quat="1 0 0 0">
+            <inertial pos="0.00175941 0.00436112 -0.105273" quat="0.790673 0.0492129 0.0289692 0.60957" mass="5.24862" diaginertia="0.0367159 0.0355513 0.00998227" />
+            <joint name="r_hip_yaw" pos="0 0 0" axis="0 0 1" range="-1.22173 1.22173" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0577" />
+            <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_upper_leg" contype="4" conaffinity="3" />
+            <body name="r_lower_leg" pos="-0.02855 0.02245 -0.2658" quat="1 0 0 0">
+              <inertial pos="0.0362856 -0.014898 -0.128088" quat="0.906089 0.000513056 0.0387014 0.421314" mass="4.75938" diaginertia="0.0775216 0.0769134 0.00573524" />
+              <joint name="r_knee" pos="0 0 0" axis="0 1 0" range="-0.0523599 2.35619" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.25" />
+              <geom type="mesh" rgba="1 1 1 1" mesh="sim_gene01_r_lower_leg" contype="4" conaffinity="3" />
+              <body name="r_ankle_1" pos="0.0149861 -0.01775 -0.420239" quat="1 0 0 0">
+                <inertial pos="-0.00403866 0.000117112 -0.0177343" quat="0.673817 0.208057 0.228908 0.671032" mass="0.248377" diaginertia="0.00011093 8.04543e-05 6.21144e-05" />
+                <joint name="r_ankle_pitch" pos="0 0 0" axis="0 1 0" range="-1.0472 0.523599" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_ankle_1" contype="4" conaffinity="3" />
+                <body name="r_ankle_2" pos="-0.0005 0 -0.03">
+                  <inertial pos="0.0374984 2.8398e-07 -0.0312331" quat="-4.44061e-05 0.737951 -2.68168e-05 0.674855" mass="1.14502" diaginertia="0.00626244 0.00615534 0.00117474" />
+                  <joint name="r_ankle_roll" pos="0 0 0" axis="1 0 0" range="-0.436332 0.436332" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                  <geom type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_r_ankle_2" contype="4" conaffinity="3" />
+                  <geom pos="0 0 -0.025" quat="1 0 0 0" type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_r_foot_lowpoly" contype="4" conaffinity="3" />
+                  <site name="r_ankle_sph_1" pos="0.044 0.02399999999999998 0.014000000000000012" quat="1.0 -5.780475156014055e-17 -2.477028335415224e-33 4.285163881100852e-17" />
+                  <site name="r_sole_front" pos="0.10999999999999996 1.915577769213642e-17 -0.06099999999999998" quat="1.0 7.192838124322898e-19 1.1102230246324772e-16 2.375546113557656e-17" />
+                  <site name="r_sole_rear" pos="-0.050000000000000024 1.1554030128751932e-17 -0.06099999999999988" quat="1.0 7.192838124322898e-19 1.1102230246324772e-16 2.375546113557656e-17" />
+                  <site name="r_sole" pos="-0.015000000000000034 1.3216912408242288e-17 -0.060999999999999895" quat="1.0 7.192838124322898e-19 1.1102230246324772e-16 2.375546113557656e-17" />
+                  <site name="r_ankle_sph_2" pos="0.044000000000000004 -0.024000000000000014 0.014000000000000012" quat="1.0 -5.780475156014055e-17 -2.477028335415224e-33 4.285163881100852e-17" />
+                  <site name="r_foot" pos="-2.949029909160572e-17 1.3877787807814457e-17 -0.024999999999999918" quat="1.0 7.192838124322898e-19 1.1102230246324772e-16 2.3755461135576558e-17" />
+                </body>
+              </body>
+              <body name="r_crank_1" pos="0.065228 -0.01775 -0.0983931" quat="0.689548 -0.0959043 0.156598 0.700573">
+                <inertial pos="0.00843524 -0.00226853 5.74378e-09" quat="0.533178 0.533178 0.464458 0.464458" mass="0.198088" diaginertia="0.000118964 8.82888e-05 4.03384e-05" />
+                <joint name="r_ankle_motor_1" pos="0 0 0" axis="0 -1 0" range="-0.689405 1.24267" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+                <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_crank_1" contype="4" conaffinity="3" />
+                <body name="r_ring_1" pos="0.04 -0.02 0" quat="1 0 0 0">
+                  <inertial pos="-1.20706e-09 1.43119e-09 -7.37009e-11" quat="0.707107 0 0 0.707107" mass="0.0132603" diaginertia="6.40814e-07 4.44558e-07 4.44558e-07" />
+                  <joint name="r_rod_1_u_0" pos="0 0 0" axis="0 -1 0" range="-1.74533 1.74533" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                  <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_ring_1" contype="4" conaffinity="3" />
+                  <body name="r_rod_1" pos="0 0 0" quat="1 0 0 0">
+                    <inertial pos="0.0504593 -0.0013747 -0.153395" quat="0.986117 -0.0122182 -0.157823 0.0501527" mass="0.312106" diaginertia="0.00387135 0.00387135 1.20758e-05" />
+                    <joint name="r_rod_1_u_1" pos="0 0 0" axis="1 0 0" range="-1.74533 1.74533" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                    <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_rod_1" contype="4" conaffinity="3" />
+                    <site name="r_rod_sph_1" pos="0.10103328881885734 -0.0027289612509534683 -0.30717141420436134" quat="-0.6895486909665716 -0.09590291676159209 0.15659694373226954 0.7005730729600012" />
+                  </body>
+                </body>
+              </body>
+              <body name="r_crank_2" pos="0.0578197 -0.01775 -0.18307" quat="0.687497 0.104822 0.165371 -0.699294">
+                <inertial pos="0.00843524 0.00226853 -5.74377e-09" quat="0.464458 0.464458 0.533178 0.533178" mass="0.198088" diaginertia="0.000118964 8.82888e-05 4.03384e-05" />
+                <joint name="r_ankle_motor_2" pos="0 0 0" axis="0 1 0" range="-1.2322 0.71384" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" armature="0.0254" />
+                <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_crank_2" contype="4" conaffinity="3" />
+                <body name="r_ring_2" pos="0.04 0.02 0" quat="1 0 0 0">
+                  <inertial pos="-1.20706e-09 -1.43119e-09 7.37009e-11" quat="0.707107 0 0 0.707107" mass="0.0132603" diaginertia="6.40814e-07 4.44558e-07 4.44558e-07" />
+                  <joint name="r_rod_2_u_0" pos="0 0 0" axis="0 1 0" range="-1.74533 1.74533" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                  <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_ring_2" contype="4" conaffinity="3" />
+                  <body name="r_rod_2" pos="0 0 0" quat="1 0 0 0">
+                    <inertial pos="0.0383725 0.00137788 -0.112099" quat="0.601828 -0.126643 -0.104725 0.781535" mass="0.246448" diaginertia="0.00178325 0.00178324 1.06832e-05" />
+                    <joint name="r_rod_2_u_1" pos="0 0 0" axis="-1 0 0" range="-1.74533 1.74533" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
+                    <geom type="mesh" rgba="0.6 0.6 0.6 1" mesh="sim_gene01_r_rod_2" contype="4" conaffinity="3" />
+                    <site name="r_rod_sph_2" pos="0.07691100739611352 0.0027289612509534683 -0.22469167707729287" quat="0.6874949830668332 -0.10483185608864877 -0.16538031399756928 0.6992927011981527" />
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <sensor>
+    <framequat name="chest_imu_framequat" objtype="site" objname="chest_imu" />
+    <gyro name="chest_imu_gyro" site="chest_imu" />
+  </sensor>
+  <equality>
+    <connect site1="l_ankle_sph_1" site2="l_rod_sph_1" solimp="1.0 0.99 0.001" solref="0.01 1.0" />
+    <connect site1="l_ankle_sph_2" site2="l_rod_sph_2" solimp="1.0 0.99 0.001" solref="0.01 1.0" />
+    <connect site1="r_ankle_sph_1" site2="r_rod_sph_1" solimp="1.0 0.99 0.001" solref="0.01 1.0" />
+    <connect site1="r_ankle_sph_2" site2="r_rod_sph_2" solimp="1.0 0.99 0.001" solref="0.01 1.0" />
+  </equality>
+</mujoco>
