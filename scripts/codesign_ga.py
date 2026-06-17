@@ -31,8 +31,9 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 import torch
-from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import pdist
+from scipy.spatial.transform import Rotation
 
 # ---------------------------------------------------------------------------
 # 1. Humanoid domain: symmetric actuator groups + per-group catalog.
@@ -59,11 +60,15 @@ class ActuatorGroup:
 # QDD lower-body humanoid: 6 symmetric leg groups with wide continuous search bounds
 # (no discrete "custom" flag; all are continuous torque optimizations).
 # Search space expanded to find diverse motor combinations that minimize peak torques.
+TORQUE_CLUSTER_THRESHOLD_NM = 12.0
+
 QDD_GROUPS: list[ActuatorGroup] = [
   ActuatorGroup("hip_pitch", ("l_hip_pitch", "r_hip_pitch"), 80.0, (30.0, 150.0)),
   ActuatorGroup("hip_roll", ("l_hip_roll", "r_hip_roll"), 80.0, (30.0, 150.0)),
   ActuatorGroup("hip_yaw", ("l_hip_yaw", "r_hip_yaw"), 40.0, (10.0, 100.0)),
-  ActuatorGroup("knee", ("l_knee", "r_knee"), 80.0, (30.0, 180.0)),  # Increased to Type 3 capacity
+  ActuatorGroup(
+    "knee", ("l_knee", "r_knee"), 80.0, (30.0, 180.0)
+  ),  # Increased to Type 3 capacity
   ActuatorGroup("ankle_pitch", ("l_ankle_pitch", "r_ankle_pitch"), 50.0, (15.0, 120.0)),
   ActuatorGroup("ankle_roll", ("l_ankle_roll", "r_ankle_roll"), 17.0, (5.0, 80.0)),
 ]
@@ -77,6 +82,14 @@ QDD_JOINT_ORDER: list[str] = [
 
 # Normalization range the policy was trained with (must match the env's obs term).
 TAU_OBS_RANGE: tuple[float, float] = (5.0, 90.0)
+WALK_SEED_GENOME: dict[str, float] = {
+  "tau_hip_pitch": 31.98331642150879,
+  "tau_hip_roll": 31.128311157226562,
+  "tau_hip_yaw": 59.416717529296875,
+  "tau_knee": 177.12530517578125,
+  "tau_ankle_pitch": 47.57539749145508,
+  "tau_ankle_roll": 29.87046241760254,
+}
 
 
 @dataclass
@@ -131,23 +144,22 @@ def count_motor_types(genome: dict[str, float], cfg: CodesignConfig) -> int:
     2. Counts "natural" clusters rather than arbitrary thresholds
     3. Scales better across the full [5, 90] Nm range
 
-  Distance threshold: 2.0 Nm means torques within ±2.0 Nm of each other cluster.
+  Distance threshold: 12.0 Nm means torques within roughly one catalog step of
+  each other cluster, so near-identical values do not split into fake types.
 
   Examples:
-    τ = [80.1, 79.9, 51.0, 49.5, 25.0]
-    → With threshold 2.0:
-       * 80.1, 79.9 cluster together (distance 0.2 < 2.0) → Type 1
-       * 51.0, 49.5 cluster together (distance 1.5 < 2.0) → Type 2
-       * 25.0 alone → Type 3
-    → count: 3 types (natural clustering!)
+    τ = [36.0, 31.0, 25.0]
+    → With threshold 12.0:
+       * 36.0, 31.0, 25.0 cluster together
+    → count: 1 type (no fake type splitting)
 
-    τ = [80.0, 70.0, 50.0, 40.0, 30.0, 20.0]
-    → All inter-group distances > 2.0, so no merging
-    → count: 6 types
+    τ = [90.0, 70.0, 50.0, 40.0, 30.0, 20.0]
+    → Larger separations still form distinct clusters
+    → count: multiple types
 
   Algorithm:
     1. Build hierarchical clustering dendrogram of 6 tau values
-    2. Cut dendrogram at distance threshold (2.0 Nm)
+    2. Cut dendrogram at distance threshold (12.0 Nm)
     3. Count resulting clusters
   """
   taus = np.array([float(genome[f"tau_{group.name}"]) for group in cfg.groups]).reshape(
@@ -162,9 +174,11 @@ def count_motor_types(genome: dict[str, float], cfg: CodesignConfig) -> int:
   distances = pdist(taus, metric="euclidean")
   linkage_matrix = linkage(distances, method="complete")
 
-  # Cut at threshold: 2.0 Nm means "same type if within ±2.0"
+  # Cut at threshold: near-identical values should not form separate types.
   # (Complete linkage: max distance between any pair in cluster)
-  cluster_labels = fcluster(linkage_matrix, t=2.0, criterion="distance")
+  cluster_labels = fcluster(
+    linkage_matrix, t=TORQUE_CLUSTER_THRESHOLD_NM, criterion="distance"
+  )
 
   return len(np.unique(cluster_labels))
 
@@ -280,6 +294,33 @@ class AmpAlignmentMetric(PerformanceMetric):
     return self._total / max(self._steps, 1)
 
 
+class WalkabilityMetric(PerformanceMetric):
+  """Command-tracking score plus height stability over the rollout."""
+
+  def reset(self, num_envs: int, device: str) -> None:
+    self._track_total = torch.zeros(num_envs, device=device)
+    self._height_total = torch.zeros(num_envs, device=device)
+    self._min_height = torch.full(
+      (num_envs,), float("inf"), device=device, dtype=torch.float32
+    )
+    self._steps = 0
+
+  def update(self, backend, obs, reward) -> None:
+    actor_obs = backend._actor_obs(obs)
+    target_vx = actor_obs[:, -15]
+    self._track_total += -torch.abs(actor_obs[:, 0] - target_vx)
+    height = backend._root_height()
+    self._height_total += height
+    self._min_height = torch.minimum(self._min_height, height)
+    self._steps += 1
+
+  def result(self) -> torch.Tensor:
+    steps = max(self._steps, 1)
+    mean_track = self._track_total / steps
+    mean_height = self._height_total / steps
+    return 2.0 * mean_track + mean_height + self._min_height
+
+
 class RandomPolicy(torch.nn.Module):
   """Uniform random actions in [-1, 1] — for smoke-testing the GA plumbing."""
 
@@ -309,8 +350,10 @@ class FlatActorPolicy(torch.nn.Module):
 class OnnxPolicy(torch.nn.Module):
   """Wrap an ONNX policy for inference on mjlab.
 
-  Handles dimension mismatch between IsaacSim training (177 obs) and mjlab (168 obs)
-  by zero-padding or truncating observations as needed.
+  Handles dimension mismatch between simulator contracts:
+  - motor-conditioned mjlab actor obs (180) vs IsaacLab ONNX blind+tau (177)
+  - vanilla mjlab actor obs (168) vs blind ONNX (165)
+  and falls back to padding/truncation for other mismatches.
 
   Example:
     policy = OnnxPolicy("policy_62000.onnx")
@@ -338,14 +381,15 @@ class OnnxPolicy(torch.nn.Module):
     )
 
   def _adapt_obs(self, obs: torch.Tensor) -> np.ndarray:
-    """Convert mjlab obs (batch, 168) to ONNX obs (batch, onnx_obs_dim).
-
-    If mjlab obs_dim < onnx_obs_dim: pad with zeros.
-    If mjlab obs_dim > onnx_obs_dim: truncate.
-    """
-    mjlab_obs_dim = obs.shape[-1]
+    """Convert mjlab flat obs to ONNX input contract."""
+    mjlab_obs_dim = int(obs.shape[-1])
     if mjlab_obs_dim == self._onnx_obs_dim:
       return obs.cpu().numpy().astype(np.float32)
+
+    # Mjlab actor observations include base linear velocity as the leading 3 dims.
+    # gb-rl / IsaacLab blind ONNX contracts do not include this block.
+    if mjlab_obs_dim == self._onnx_obs_dim + 3:
+      return obs[:, 3:].cpu().numpy().astype(np.float32)
 
     if mjlab_obs_dim < self._onnx_obs_dim:
       # Pad with zeros
@@ -410,7 +454,6 @@ def _load_mjlab_policy_module(
 
   # Fall back to rsl_rl checkpoint (requires environment setup)
   import mjlab.tasks  # noqa: F401
-
   from mjlab.envs import ManagerBasedRlEnv
   from mjlab.rl import RslRlVecEnvWrapper
   from mjlab.rl.amp_runner import MjlabAmpOnPolicyRunner
@@ -464,6 +507,9 @@ class CodesignBackend(abc.ABC):
 
   @abc.abstractmethod
   def _policy(self, actor_obs: torch.Tensor) -> torch.Tensor: ...
+
+  @abc.abstractmethod
+  def _root_height(self) -> torch.Tensor: ...
 
   @abc.abstractmethod
   def _write_tau(self, tau_full: torch.Tensor) -> None:
@@ -545,11 +591,41 @@ class MjlabBackend(CodesignBackend):
     self.joint_order = joint_order
     self._tau_obs_range = tau_obs_range
 
-    cfg = load_env_cfg(task)
+    try:
+      cfg = load_env_cfg(task, play=True)
+    except TypeError:
+      cfg = load_env_cfg(task)
     cfg.scene.num_envs = num_envs
-    # Disable the training-time torque randomization so the GA controls tau_max.
+    # Match deployment intent for locomotion co-design: forward-walking evaluation.
+    if hasattr(cfg, "commands") and "twist" in cfg.commands:
+      twist_cmd = cfg.commands["twist"]
+      twist_cmd.ranges.lin_vel_x = (0.8, 0.8)
+      twist_cmd.ranges.lin_vel_y = (0.0, 0.0)
+      twist_cmd.ranges.ang_vel_z = (0.0, 0.0)
+      if hasattr(twist_cmd, "rel_standing_envs"):
+        twist_cmd.rel_standing_envs = 0.0
+      if hasattr(twist_cmd, "rel_heading_envs"):
+        twist_cmd.rel_heading_envs = 0.0
+      if hasattr(twist_cmd, "heading_command"):
+        twist_cmd.heading_command = False
+      if hasattr(twist_cmd.ranges, "heading"):
+        twist_cmd.ranges.heading = None
+    # Disable play-time randomization so GA sees the same fixed deployment setup
+    # as the sim2sim rollout.
     if getattr(cfg, "events", None) is not None:
+      for name in (
+        "encoder_bias",
+        "base_com",
+        "foot_friction_slide",
+        "randomize_robot_mass",
+        "randomize_actuator_gains",
+        "randomize_joint_friction",
+        "joint_default_pos_noise",
+        "randomize_terrain",
+      ):
+        cfg.events.pop(name, None)
       cfg.events.pop("randomize_motor_tau_max", None)
+      cfg.events.pop("push_robot", None)
     self.env = ManagerBasedRlEnv(cfg=cfg, device=device)
 
     # Frozen policy: a TorchScript module mapping actor-obs -> action (as exported
@@ -580,6 +656,10 @@ class MjlabBackend(CodesignBackend):
 
   def _policy(self, actor_obs: torch.Tensor) -> torch.Tensor:
     return self.policy_module(actor_obs)
+
+  def _root_height(self) -> torch.Tensor:
+    robot = self.env.unwrapped.scene["robot"]
+    return robot.data.root_link_pos_w[:, 2]
 
   def _write_tau(self, tau_full: torch.Tensor) -> None:
     self._set_tau(
@@ -656,6 +736,10 @@ class IsaacLabBackend(CodesignBackend):
   def _policy(self, actor_obs: torch.Tensor) -> torch.Tensor:
     return self.policy_module(actor_obs)
 
+  def _root_height(self) -> torch.Tensor:
+    robot = self.env.unwrapped.scene["robot"]
+    return robot.data.root_link_pos_w[:, 2]
+
   def _write_tau(self, tau_full: torch.Tensor) -> None:
     self._set_tau(
       self.env.unwrapped,
@@ -666,13 +750,96 @@ class IsaacLabBackend(CodesignBackend):
     )
 
 
+class Sim2SimBackend:
+  """Direct sim2sim backend using the validated MuJoCo-C rollout."""
+
+  def __init__(
+    self,
+    task: str,
+    policy_path: str | None,
+    num_envs: int,
+    joint_order: list[str],
+    tau_obs_range: tuple[float, float],
+    rollout_steps: int,
+    metric: PerformanceMetric,
+    device: str = "cpu",
+  ) -> None:
+    del task, num_envs, device
+    if policy_path is None:
+      raise ValueError("sim2sim backend requires an ONNX policy path")
+
+    from sim2sim import Sim2SimRunner
+
+    self.rollout_steps = rollout_steps
+    self.metric = metric
+    self.device = "cpu"
+    self._tau_obs_range = tau_obs_range
+    self.joint_order = list(joint_order)
+    self.runner = Sim2SimRunner(
+      onnx_path=policy_path,
+      obs_layout="auto",
+      tau_obs_range=tau_obs_range,
+    )
+    self.num_envs = 1
+    self._tau_full: torch.Tensor | None = None
+
+  def _apply_tau(self, tau_vec: np.ndarray) -> None:
+    tau = tau_vec.astype(np.float32)
+    self.runner.effort_limit[:] = tau
+    self.runner.motor_tau_obs[:] = np.clip(
+      (tau - self._tau_obs_range[0])
+      / (self._tau_obs_range[1] - self._tau_obs_range[0]),
+      0.0,
+      1.0,
+    )
+    for i, aid in enumerate(self.runner.actuator_idx):
+      self.runner.model.actuator_forcerange[aid] = (-tau[i], tau[i])
+
+  def evaluate(self, tau_LJ: torch.Tensor, n_seeds: int) -> np.ndarray:
+    scores: list[float] = []
+    tau_rows = tau_LJ.detach().cpu().numpy()
+    for tau_vec in tau_rows:
+      seed_scores = []
+      for _ in range(n_seeds):
+        seed_scores.append(self._rollout_one(tau_vec))
+      scores.append(float(np.mean(seed_scores)))
+    return np.asarray(scores, dtype=np.float64)
+
+  def _rollout_one(self, tau_vec: np.ndarray) -> float:
+    self._apply_tau(tau_vec)
+    self.runner.reset()
+    self.runner.command[:] = [0.8, 0.0, 0.0]
+    self.runner.filtered_command[:] = 0.0
+
+    lin_vx = []
+    heights = []
+    for _ in range(self.rollout_steps):
+      self.runner._step_once()
+      base_quat = self.runner.data.qpos[3:7]
+      rot = Rotation.from_quat(base_quat, scalar_first=True)
+      v_body = rot.apply(self.runner.data.qvel[0:3], inverse=True).astype(np.float32)
+      lin_vx.append(float(v_body[0]))
+      heights.append(float(self.runner.data.qpos[2]))
+    lin_vx_np = np.asarray(lin_vx, dtype=np.float32)
+    heights_np = np.asarray(heights, dtype=np.float32)
+    mean_vx = float(lin_vx_np.mean())
+    mean_height = float(heights_np.mean())
+    min_height = float(heights_np.min())
+    del min_height
+    return float(mean_vx + 0.1 * mean_height + 0.1 * float(heights_np.min()))
+
+
 def build_backend(name: str, **kwargs) -> CodesignBackend:
   """Factory: switch simulation backend with a single argument."""
   if name == "mjlab":
     return MjlabBackend(**kwargs)
   if name == "isaaclab":
     return IsaacLabBackend(**kwargs)
-  raise ValueError(f"Unknown backend '{name}' (expected 'mjlab' or 'isaaclab').")
+  if name == "sim2sim":
+    return Sim2SimBackend(**kwargs)
+  raise ValueError(
+    f"Unknown backend '{name}' (expected 'mjlab', 'isaaclab', or 'sim2sim')."
+  )
 
 
 # ---------------------------------------------------------------------------
@@ -681,12 +848,12 @@ def build_backend(name: str, **kwargs) -> CodesignBackend:
 
 
 def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
-  from pymoo.core.problem import Problem
-  from pymoo.core.variable import Real
-
   # Pure continuous variables: per group, optimize torque limit (Nm)
   # Ordered dict preserves variable order for encoding/decoding
   from collections import OrderedDict
+
+  from pymoo.core.problem import Problem
+  from pymoo.core.variable import Real
 
   variables = OrderedDict()
   for group in cfg.groups:
@@ -695,9 +862,9 @@ def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
 
   class CodesignProblem(Problem):
     def __init__(self) -> None:
-      # n_obj=2: [-performance, hardware_cost]
-      # No hard constraint; soft penalty for >3 motor types via cost function
-      super().__init__(vars=variables, n_obj=2)
+      # Single scalarized objective: performance - cost
+      # Increasing w_count/w_torque directly prefers cheaper designs
+      super().__init__(vars=variables, n_obj=1)
 
     def _evaluate(self, X, out, *args, **kwargs):
       # X is a 1-D object array of genome dicts (continuous variables only).
@@ -714,22 +881,25 @@ def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
       )
       performance = backend.evaluate(tau_LJ, n_seeds)  # (L,)
 
-      f_perf = -performance  # maximize reward -> minimize negative reward
-
-      # Cost function with soft penalty for excess motor types
-      f_cost = []
-      for (n_choices, cum_tau), n_types in zip(costs, n_motor_types):
+      # Scalarized objective: maximize performance minus hardware cost
+      f_obj = []
+      for perf, (n_choices, cum_tau), n_types in zip(performance, costs, n_motor_types, strict=True):
         # Base cost: diversity (number of unique motor models) + total capacity
         base_cost = cfg.w_count * n_choices + cfg.w_torque * (cum_tau / cfg.tau_ref)
 
-        # STRONG penalty: strongly discourage >3 types so Pareto front naturally
-        # evolves toward 2-3 types. Multiplier must exceed typical reward variance.
+        # STRONG penalty: strongly discourage >3 types so designs naturally
+        # evolve toward 2-3 types. Must exceed typical reward variance.
         # E.g., if reward ranges ~0.05-0.1 and cost ~5-15, penalty must be ~10+ to
-        # make "4 types" designs Pareto-dominated by "3 types" designs.
+        # make "4 types" designs worse than "3 types" designs.
         excess_penalty = max(0.0, float(n_types - 3)) * cfg.w_motor_type_penalty
-        f_cost.append(base_cost + excess_penalty)
+        total_cost = base_cost + excess_penalty
 
-      out["F"] = np.column_stack([f_perf, np.array(f_cost, dtype=np.float64)])
+        # Fitness: higher performance is better, lower cost is better
+        # Minimize: -performance + cost
+        fitness = -perf + total_cost
+        f_obj.append(fitness)
+
+      out["F"] = np.array(f_obj, dtype=np.float64).reshape(-1, 1)
 
   return CodesignProblem()
 
@@ -741,6 +911,7 @@ def run_optimization(
   n_seeds: int,
   generations: int,
   seed: int = 0,
+  seed_genome: dict[str, float] | None = None,
 ):
   from pymoo.algorithms.moo.nsga2 import NSGA2
   from pymoo.core.mixed import (
@@ -748,16 +919,43 @@ def run_optimization(
     MixedVariableMating,
     MixedVariableSampling,
   )
+  from pymoo.core.sampling import Sampling
   from pymoo.optimize import minimize
 
   problem = _make_problem(backend, cfg, n_seeds)
 
+  class SeededMixedVariableSampling(Sampling):
+    def __init__(self, seed_genome: dict[str, float] | None) -> None:
+      super().__init__()
+      self._seed_genome = seed_genome or {}
+
+    def _do(self, problem, n_samples, random_state=None, **kwargs):
+      X = MixedVariableSampling()._do(
+        problem, n_samples, random_state=random_state, **kwargs
+      )
+      if not self._seed_genome or n_samples == 0:
+        return X
+
+      seed = {}
+      for name in problem.vars.keys():
+        value = self._seed_genome.get(name)
+        if value is None:
+          value = X[0][name]
+        seed[name] = float(value)
+      X[0] = seed
+      return X
+
   # NSGA-II with MixedVariableSampling to handle dict-based continuous variables
   # MixedVariableSampling works for pure continuous dict variables too
+  sampling = (
+    SeededMixedVariableSampling(seed_genome)
+    if seed_genome is not None
+    else MixedVariableSampling()
+  )
   algorithm = NSGA2(
     pop_size=pop_size,
     n_offsprings=pop_size,
-    sampling=MixedVariableSampling(),
+    sampling=sampling,
     mating=MixedVariableMating(
       eliminate_duplicates=MixedVariableDuplicateElimination()
     ),
@@ -785,27 +983,27 @@ def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
   F = np.atleast_2d(result.F)
 
   # Validate result shape
-  if F.ndim != 2 or F.shape[1] < 2:
+  if F.ndim != 2 or F.shape[1] < 1:
     print(f"\n⚠️  Unexpected result shape: F.shape={F.shape}")
-    print(f"Expected (n_designs, 2) objectives, got {F.shape}")
+    print(f"Expected (n_designs, 1+) objectives, got {F.shape}")
     return
 
-  order = np.argsort(F[:, 1])  # by ascending hardware cost
-  print("\n=== Pareto front (performance vs hardware cost) ===")
-  print(f"{'reward':>10} {'cost':>10} {'motors':>7} {'cumTau(Nm)':>11}  design")
+  # For single-objective, sort by fitness (ascending = lower is better)
+  order = np.argsort(F[:, 0])
+  print("\n=== Best designs (sorted by fitness) ===")
+  print(f"{'fitness':>10} {'motors':>7} {'cumTau(Nm)':>11}  design")
   rows = []
   for i in order:
     genome = X[i] if isinstance(X[i], dict) else dict(X[i])
     tau_vec, n_variants, cum_tau = decode_individual(genome, cfg)
     n_motor_types = count_motor_types(genome, cfg)
-    reward = -F[i, 0]
-    cost = F[i, 1]
+    fitness = F[i, 0]
     design = {
       g.name: round(float(tau_vec[cfg.joint_order.index(g.joints[0])]), 1)
       for g in cfg.groups
     }
-    print(f"{reward:10.3f} {cost:10.3f} {n_motor_types:7d} {cum_tau:11.1f}  {design}")
-    rows.append((reward, cost, n_motor_types, cum_tau, design))
+    print(f"{fitness:10.3f} {n_motor_types:7d} {cum_tau:11.1f}  {design}")
+    rows.append((fitness, n_motor_types, cum_tau, design))
   if out_path:
     np.savez(
       out_path,
@@ -813,12 +1011,12 @@ def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
       F=F,
       groups=[g.name for g in cfg.groups],
     )
-    print(f"\nSaved Pareto set to {out_path}")
+    print(f"\nSaved results to {out_path}")
 
 
 def main() -> None:
   p = argparse.ArgumentParser(description=__doc__)
-  p.add_argument("--backend", choices=["mjlab", "isaaclab"], default="mjlab")
+  p.add_argument("--backend", choices=["mjlab", "isaaclab", "sim2sim"], default="mjlab")
   p.add_argument("--task", default="Mjlab-Velocity-Flat-Gbionics-QDD-MotorCond")
   p.add_argument(
     "--policy",
@@ -835,8 +1033,8 @@ def main() -> None:
   p.add_argument("--w-count", type=float, default=1.0)
   p.add_argument("--w-torque", type=float, default=1.0)
   p.add_argument("--out", default="codesign_pareto.npz")
-  # Performance objective (5): task reward, or AMP-discriminator alignment.
-  p.add_argument("--objective", choices=["reward", "amp"], default="reward")
+  # Performance objective (5): walkability score, task reward, or AMP alignment.
+  p.add_argument("--objective", choices=["reward", "amp", "walk"], default="walk")
   p.add_argument(
     "--discriminator",
     default=None,
@@ -854,6 +1052,9 @@ def main() -> None:
     help="Tiny run (pop=4, seeds=1, steps=5, gens=1) to validate the pipeline.",
   )
   args = p.parse_args()
+  if args.objective == "walk" and args.backend != "sim2sim":
+    print("[Config] Switching to sim2sim backend for walk objective.")
+    args.backend = "sim2sim"
 
   if args.smoke_test:
     args.pop_size, args.n_seeds, args.rollout_steps, args.generations = 4, 1, 5, 1
@@ -878,6 +1079,8 @@ def main() -> None:
       p.error("--discriminator is required for --objective amp.")
     disc = torch.jit.load(args.discriminator, map_location=args.device).eval()
     metric = AmpAlignmentMetric(disc, use_transition=args.amp_transition)
+  elif args.objective == "walk":
+    metric = WalkabilityMetric()
   else:
     metric = RewardMetric()
 
@@ -902,6 +1105,7 @@ def main() -> None:
     n_seeds=args.n_seeds,
     generations=args.generations,
     seed=args.seed,
+    seed_genome=WALK_SEED_GENOME if args.objective == "walk" else None,
   )
   report_pareto(result, cfg, args.out)
 

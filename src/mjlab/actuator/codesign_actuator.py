@@ -1,9 +1,9 @@
 """PD actuator with differentiable motor-type codesign.
 
-Replaces hard torque clipping with soft saturation from a
-GumbelSoftmaxActuator. During rollout, torques are logged for the
-codesign optimizer step. The codesign scheduler (CodesignScheduler)
-runs as an alternating optimization alongside PPO.
+Uses soft saturation while the codesign surrogate is being optimized,
+then hard-clips to the learned bound in eval/rollout mode. During rollout,
+torques are logged for the codesign optimizer step. The codesign scheduler
+(CodesignScheduler) runs as an alternating optimization alongside PPO.
 
 Usage:
   1. Configure CodesignPdActuatorCfg with motor types and symmetry
@@ -151,7 +151,7 @@ class CodesignPdActuator(IdealPdActuator["CodesignPdActuatorCfg"]):
     self._scheduler = CodesignScheduler(self.gumbel, device=device)
 
   def _clip_effort(self, effort: torch.Tensor) -> torch.Tensor:
-    """Replace hard clamp with soft saturation and log torques."""
+    """Apply the codesign actuator's learned bound and log torques."""
     self.gumbel.log_torques(effort)
     return self.gumbel(effort)
 

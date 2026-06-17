@@ -1,6 +1,7 @@
 import os
 import sys
 import traceback
+from importlib import import_module
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -60,6 +61,21 @@ def _configure_mediapy() -> None:
   mediapy.set_ffmpeg(imageio_ffmpeg.get_ffmpeg_exe())
 
 
+def _register_backward_compat_aliases() -> None:
+  """Register module aliases for historical typoed import paths."""
+  try:
+    tasks_mod = import_module("mjlab.tasks")
+    velocity_mod = import_module("mjlab.tasks.velocity")
+    velocity_mdp_mod = import_module("mjlab.tasks.velocity.mdp")
+  except Exception:
+    return
+
+  sys.modules.setdefault("mjlab.trasks", tasks_mod)
+  sys.modules.setdefault("mjlab.trasks.velocity", velocity_mod)
+  sys.modules.setdefault("mjlab.trasks.velocity.mdp", velocity_mdp_mod)
+
+
 _configure_warp()
 _configure_mediapy()
 _import_registered_packages()
+_register_backward_compat_aliases()

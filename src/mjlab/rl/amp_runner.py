@@ -351,11 +351,14 @@ class MjlabAmpOnPolicyRunner:
     print("=" * 60)
     print(self._codesign_module.summary())
     print("=" * 60 + "\n")
+    self._plot_codesign_torque_vs_limits()
 
   def _init_codesign(self) -> None:
     """Initialize standalone codesign module if env has codesign config."""
     self._codesign_module = None
     self._codesign_scheduler = None
+    self._codesign_peak_demand_abs: torch.Tensor | None = None
+    self._codesign_peak_applied_abs: torch.Tensor | None = None
 
     env_cfg = self.env.unwrapped.cfg  # type: ignore[union-attr]
     codesign_cfg_dict = getattr(env_cfg, "codesign", None)
@@ -434,6 +437,7 @@ class MjlabAmpOnPolicyRunner:
     # pressure to grow motors. The unclipped `applied_effort` is the true demand.
     num_envs = robot.data.actuator_force.shape[0]
     tau = torch.zeros(num_envs, len(self._codesign_joint_names), device=self.device)
+    tau_applied = torch.zeros_like(tau)
     found_demand = False
     for actuator in robot.actuators:
       demand = getattr(actuator, "applied_effort", None)
@@ -444,9 +448,31 @@ class MjlabAmpOnPolicyRunner:
         if jname in self._codesign_joint_names:
           j_idx = self._codesign_joint_names.index(jname)
           tau[:, j_idx] = demand[:, i]
+          if actuator.force_limit is not None:
+            limit = actuator.force_limit[:, i]
+            tau_applied[:, j_idx] = torch.clamp(demand[:, i], -limit, limit)
+          else:
+            tau_applied[:, j_idx] = demand[:, i]
     if not found_demand:
       # Fallback to clamped torques if no unclipped demand is available.
       tau = robot.data.actuator_force
+      tau_applied = robot.data.actuator_force
+
+    with torch.no_grad():
+      demand_peaks = tau.abs().amax(dim=0)
+      applied_peaks = tau_applied.abs().amax(dim=0)
+      if self._codesign_peak_demand_abs is None:
+        self._codesign_peak_demand_abs = demand_peaks.detach().cpu()
+      else:
+        self._codesign_peak_demand_abs = torch.maximum(
+          self._codesign_peak_demand_abs, demand_peaks.detach().cpu()
+        )
+      if self._codesign_peak_applied_abs is None:
+        self._codesign_peak_applied_abs = applied_peaks.detach().cpu()
+      else:
+        self._codesign_peak_applied_abs = torch.maximum(
+          self._codesign_peak_applied_abs, applied_peaks.detach().cpu()
+        )
 
     # Log torques into the codesign module.
     self._codesign_module.log_torques(tau.detach())
@@ -559,6 +585,86 @@ class MjlabAmpOnPolicyRunner:
     # Print summary periodically.
     if it % 100 == 0:
       print(f"[Codesign iter {it}] {gumbel.summary()}")
+
+  def _plot_codesign_torque_vs_limits(self) -> None:
+    """Save a final plot comparing torque usage to learned max-torque limits."""
+    if self._codesign_module is None or self.log_dir is None:
+      return
+    if (
+      self._codesign_peak_demand_abs is None
+      or self._codesign_peak_applied_abs is None
+      or len(self._codesign_joint_names) == 0
+    ):
+      print("[Codesign] Skipping torque-vs-limit plot (no torque samples).")
+      return
+
+    try:
+      import matplotlib
+
+      matplotlib.use("Agg")
+      import matplotlib.pyplot as plt
+    except ImportError:
+      return
+
+    with torch.no_grad():
+      tau_eff = self._codesign_module.tau_eff(use_gumbel=False).detach().cpu()
+
+    n = min(
+      len(self._codesign_joint_names),
+      tau_eff.numel(),
+      self._codesign_peak_demand_abs.numel(),
+      self._codesign_peak_applied_abs.numel(),
+    )
+    if n == 0:
+      return
+
+    joint_names = self._codesign_joint_names[:n]
+    tau_eff = tau_eff[:n]
+    demand_peak = self._codesign_peak_demand_abs[:n]
+    applied_peak = self._codesign_peak_applied_abs[:n]
+
+    x = list(range(n))
+    width = 0.27
+    fig, ax = plt.subplots(figsize=(max(10, n * 0.7), 6))
+    ax.bar(
+      [i - width for i in x],
+      tau_eff.tolist(),
+      width=width,
+      label="Final τ_max limit",
+      alpha=0.9,
+    )
+    ax.bar(
+      x,
+      applied_peak.tolist(),
+      width=width,
+      label="Peak |applied torque|",
+      alpha=0.9,
+    )
+    ax.bar(
+      [i + width for i in x],
+      demand_peak.tolist(),
+      width=width,
+      label="Peak |requested torque|",
+      alpha=0.8,
+    )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(joint_names, rotation=45, ha="right", fontsize=9)
+    ax.set_ylabel("Torque (Nm)")
+    ax.set_title("Gradient Codesign: Joint Torque Usage vs Learned Limits")
+    ax.grid(axis="y", alpha=0.3)
+    ax.legend(fontsize=9)
+    plt.tight_layout()
+
+    out_path = Path(self.log_dir) / "codesign_torque_vs_limits.png"
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    violations = (applied_peak > (tau_eff + 1e-5)).sum().item()
+    print(f"[Codesign] Saved torque-vs-limit plot: {out_path}")
+    print(f"[Codesign] Joints with applied peak > τ_max: {int(violations)}")
+    if self.logger is not None and hasattr(self.logger, "save_file"):
+      self.logger.save_file(str(out_path))
 
   def _log_codesign_assignment_table(self, assignment: dict[str, int], it: int) -> None:
     """Log joint-type assignment as a W&B scatter plot.

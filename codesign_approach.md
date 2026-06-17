@@ -1,144 +1,166 @@
-# Motor Codesign: Overview & Quick Reference
+# Motor Codesign: Current Architecture (Clustering-Based NSGA-II)
 
-**For detailed comparison of both approaches, see [CODESIGN_APPROACHES.md](CODESIGN_APPROACHES.md).**
+**For full comparison with differentiable Gumbel-Softmax, see
+[CODESIGN_APPROACHES.md](CODESIGN_APPROACHES.md).**
 
-This document provides a quick reference for the **current working implementation** (NSGA-II).
+This document describes the current production workflow used by
+`scripts/codesign_ga.py` and `scripts/plot_codesign_results.py`.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Run GA (10-15 min on 128 GPU envs)
+# 1) Run co-design GA
 uv run python scripts/codesign_ga.py \
   --backend mjlab \
   --task Mjlab-Velocity-Flat-Gbionics-QDD-MotorCond \
   --policy ./model_30000.pt \
-  --pop-size 32 --generations 25
+  --pop-size 32 --n-seeds 4 --generations 25
 
-# Generate plots + best design video (5-10 min)
+# 2) Generate visual analysis (includes clustering plot)
+uv run python scripts/plot_codesign_results.py \
+  --pareto codesign_pareto.npz \
+  --output-dir codesign_results
+
+# 3) Optional: validate/video selected design
 uv run python scripts/visualize_codesign.py \
   --pareto codesign_pareto.npz \
-  --policy ./model_30000.pt
+  --policy ./model_30000.pt \
+  --criteria efficiency
 ```
 
 ---
 
-## Current Approach: NSGA-II with Soft Penalty
+## Architecture Summary
 
-### Problem
+### 1) Design space (continuous torques)
 
-Optimize **torque capacities** (τ_max per joint group) to minimize hardware cost while preserving locomotion performance. Prefer 2-3 distinct motor types.
+The genome is 6D continuous, one `tau_*` per symmetric joint group:
 
-### Solution
+- `tau_hip_pitch` in `[30, 150]`
+- `tau_hip_roll` in `[30, 150]`
+- `tau_hip_yaw` in `[10, 100]`
+- `tau_knee` in `[30, 180]`
+- `tau_ankle_pitch` in `[15, 120]`
+- `tau_ankle_roll` in `[5, 80]`
 
-Multi-objective genetic algorithm with:
-- **6D continuous search space**: one τ per joint group
-- **Two objectives**: reward (maximize) vs cost (minimize)
-- **Soft penalty**: prefer ≤3 motor types via cost function
-- **Pre-trained policy**: frozen AMP-PPO (black-box evaluation)
-- **GPU-accelerated**: 128 parallel envs × 4 seeds = 512 rollouts/gen
+### 2) Evaluation backend
 
-### Genome
+- Frozen motor-conditioned policy (`model_30000.pt`)
+- MuJoCo-Warp physics via mjlab backend
+- Per-design rollout reward is measured directly (no policy retraining in loop)
+
+### 3) Multi-objective optimization
+
+NSGA-II minimizes:
 
 ```python
-X = [τ_hip_pitch, τ_hip_roll, τ_hip_yaw, τ_knee, τ_ankle_pitch, τ_ankle_roll]
-    ∈ [5, 90]^6 Nm
+f_perf = -mean_reward
+f_cost = w_count * n_choices + w_torque * (cum_tau / tau_ref)
+         + max(0, n_types - 3) * w_motor_type_penalty
 ```
 
-### Objectives
+Current defaults in `codesign_ga.py`:
+
+- `w_count = 0.5`
+- `w_torque = 1.0`
+- `tau_ref = 90.0`
+- `w_motor_type_penalty = 50.0`
+
+### 4) Objective sign convention (important)
+
+The first objective stored in Pareto files is **negative reward**:
 
 ```python
-f_perf = -mean_policy_reward              # higher reward = better
-f_cost = w_count·n_types + w_torque·(Στ/τ_ref) + penalty
-
-penalty = max(0, n_types - 3) * 2.0       # soft preference for ≤3 types
+F[:, 0] = -reward
 ```
 
-### Motor Type Clustering
+Therefore:
 
-1-decimal rounding (manufacturing tolerance):
-```python
-unique_types = {round(τ, 1) for τ in X}
-n_types = len(unique_types)
-```
+- best-by-reward index = `argmin(F[:, 0])`
+- displayed reward = `-F[i, 0]`
+- default final-selection criterion for visualization/validation = `efficiency`
+  (maximize `reward / cost`)
+- efficiency selection is walkability-aware: it first filters to designs with
+  reward >= `0.97 * max_reward`, then picks max `reward / cost` in that set
 
-### Output: Pareto Front
-
-Non-dominated designs revealing performance-cost tradeoff:
-
-| Reward | Cost | Motors | τ_total (Nm) | Design |
-|--------|------|--------|-------------|--------|
-| 0.280 | 7.71 | 2 | 694 | {80.0, 40.0, 50.0, ...} |
-| 0.285 | 8.54 | 2 | 712 | {80.0, 72.7, ...} |
-| 0.290 | 9.15 | 3 | 725 | {80.0, 40.0, 60.0, ...} |
-| 0.295 | 10.2 | 3 | 780 | {85.0, 35.0, 50.0, ...} |
-
-User selects based on engineering constraints (mass budget, BOM cost, power).
+All plotting and reporting should use this convention to avoid selecting the
+worst-performing design by mistake.
 
 ---
 
-## Why This Approach Works
+## Motor-Type Counting with Clustering
 
-1. **Soft penalty > hard constraint**
-   - Hard constraints (exactly N types) too restrictive
-   - Soft penalty allows natural clustering via cost minimization
+The old approach that treated tiny torque differences as distinct "types" was
+replaced by hierarchical clustering.
 
-2. **1-decimal rounding**
-   - Accounts for manufacturing tolerance (±0.5 Nm/motor)
-   - Clusters similar torques without artificial discretization
+### Current rule
 
-3. **Pre-trained policy**
-   - No policy training in GA loop (black-box evaluation)
-   - 800 evaluations ≈ 10-15 min (vs. 750+ full training runs)
+- Method: complete-linkage hierarchical clustering
+- Distance: Euclidean on torque values
+- Cut threshold: `TORQUE_CLUSTER_THRESHOLD_NM = 12.0`
 
-4. **Forward-only walking**
-   - Velocity command: (0.5-1.5 m/s forward, 0 rad/s angular)
-   - Ensures clean videos and consistent evaluation
+This threshold is intentionally wider, so values like `25, 31, 36 Nm` are
+treated as one cluster (same motor type family), not three fake types.
 
-5. **Pareto optimization**
-   - Not a single "best" design
-   - All tradeoffs visible
-   - Users choose based on constraints
+### Why this change
+
+With a 2 Nm threshold, near-identical torques were split into multiple types,
+which made best-design reports look inconsistent and over-fragmented.
 
 ---
 
-## Validation & Visualization
+## Visualization Pipeline (with clustering)
 
-### Plots
-- **Pareto front**: scatter plot (cost vs reward)
-- **Design comparison**: bar charts (τ per joint group)
-- **Summary**: 4-panel overview with histograms and metrics
+`plot_codesign_results.py` now produces:
 
-### Videos
-- Resolution: 960×720 @ 50 FPS
-- Duration: customizable (default 1000 steps = 20 sec)
-- Forward-only walking with realistic physics
+- `pareto_front.png`
+- `design_comparison.png`
+- `codesign_summary.png`
+- `motor_clustering.png` (**new**)
 
----
+### Plot semantics
 
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `scripts/codesign_ga.py` | NSGA-II GA with pymoo, soft penalty |
-| `scripts/plot_codesign_results.py` | Pareto plots, design comparison |
-| `scripts/validate_codesign.py` | Single design validation + video |
-| `scripts/visualize_codesign.py` | One-command orchestration |
-| `CODESIGN_APPROACHES.md` | **Full comparison: Gumbel-Softmax vs NSGA-II** |
+- Joint bars/heatmap are colored by **torque clusters**
+- Text overlays show only torque values (Nm), not `T1/T2/T3`
+- `motor_clustering.png` shows dendrogram + threshold cut line for the best
+  design, making cluster grouping explicit
 
 ---
 
-## Performance
+## Interpreting "best design"
 
-- **GA runtime**: ~10-15 min (32 pop, 25 gen, 128 GPU envs)
-- **Plots runtime**: <1 min
-- **Video runtime**: ~2-5 min per design (1000 steps)
-- **Total end-to-end**: ~20-30 min
+The Pareto "best by reward" can have low and close torques. This is valid if:
+
+1. Reward objective favors that region.
+2. Cost objective and clustering penalty do not force larger separations.
+3. Cluster threshold merges close values into one motor type class.
+
+If you see close torques reported as multiple types, check the clustering
+threshold and rerun plotting with current scripts.
+
+If you see a "best" design that does not walk, first verify the selection
+convention above (`argmin(F[:, 0])`) before changing GA hyperparameters.
 
 ---
 
-## See Also
+## Relevant Files
 
-- [CODESIGN_APPROACHES.md](CODESIGN_APPROACHES.md) — Detailed comparison of **both approaches** (Gumbel-Softmax & NSGA-II)
-- [README.md](README.md) — Project overview
+| File | Role |
+|---|---|
+| `scripts/codesign_ga.py` | NSGA-II optimization and clustered motor-type counting |
+| `scripts/plot_codesign_results.py` | Cluster-aware plots + dendrogram (`motor_clustering.png`) |
+| `scripts/validate_codesign.py` | Rollout validation and video generation |
+| `scripts/visualize_codesign.py` | One-command plotting + validation pipeline |
+| `CODESIGN_APPROACHES.md` | NSGA-II vs Gumbel-Softmax comparison |
+
+---
+
+## Notes
+
+- Gumbel-Softmax codesign remains in the repository for parallel investigation.
+- This document only describes the current GA workflow used for batch design
+  search and Pareto analysis.
+- Keep this file updated whenever co-design selection logic, clustering
+  thresholds, or output plots change.

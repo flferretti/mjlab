@@ -16,7 +16,6 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from tensordict import TensorDict
 
 
 class FlatActorExporter(nn.Module):
@@ -67,7 +66,6 @@ def main():
 
   # Load environment config to get observation dimensions.
   import mjlab.tasks  # noqa: F401 — register tasks
-
   from mjlab.tasks.registry import load_env_cfg, load_rl_cfg
 
   env_cfg = load_env_cfg(args.task, play=True)

@@ -202,7 +202,7 @@
                   <inertial pos="0.0369984 2.8398e-07 -0.0312331" quat="-4.44061e-05 0.737951 -2.68168e-05 0.674855" mass="1.14502" diaginertia="0.00626244 0.00615534 0.00117474" />
                   <joint name="l_ankle_roll" pos="0 0 0" axis="-1 0 0" range="-0.436332 0.436332" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
                   <geom type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_l_ankle_2" contype="1" conaffinity="6" />
-                  <geom pos="0 0 -0.025" quat="1 0 0 0" type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_l_foot_lowpoly" contype="1" conaffinity="6" />
+                  <geom type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_l_foot_lowpoly" contype="1" conaffinity="6" />
                   <site name="l_sole_rear" pos="-0.049999999999999996 -2.7755575615626867e-17 -0.061000000000000304" quat="1.0 -6.669591693910217e-30 2.6469779601696886e-23 -2.5240467479161358e-29" />
                   <site name="l_ankle_sph_1" pos="0.04349999999999964 -0.024000000000000018 0.013999999999999901" quat="1.0 0.0 0.0 -3.081487911019578e-33" />
                   <site name="l_ankle_sph_2" pos="0.043499999999999636 0.023999999999999976 0.013999999999999901" quat="1.0 0.0 0.0 -3.081487911019578e-33" />
@@ -271,7 +271,7 @@
                   <inertial pos="0.0374984 2.8398e-07 -0.0312331" quat="-4.44061e-05 0.737951 -2.68168e-05 0.674855" mass="1.14502" diaginertia="0.00626244 0.00615534 0.00117474" />
                   <joint name="r_ankle_roll" pos="0 0 0" axis="1 0 0" range="-0.436332 0.436332" actuatorfrcrange="-1000000000 1000000000" damping="0.0" frictionloss="0.0" />
                   <geom type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_r_ankle_2" contype="4" conaffinity="3" />
-                  <geom pos="0 0 -0.025" quat="1 0 0 0" type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_r_foot_lowpoly" contype="4" conaffinity="3" />
+                  <geom type="mesh" rgba="1 0.51 0 1" mesh="sim_gene01_r_foot_lowpoly" contype="4" conaffinity="3" />
                   <site name="r_ankle_sph_1" pos="0.044 0.02399999999999998 0.014000000000000012" quat="1.0 -5.780475156014055e-17 -2.477028335415224e-33 4.285163881100852e-17" />
                   <site name="r_sole_front" pos="0.10999999999999996 1.915577769213642e-17 -0.06099999999999998" quat="1.0 7.192838124322898e-19 1.1102230246324772e-16 2.375546113557656e-17" />
                   <site name="r_sole_rear" pos="-0.050000000000000024 1.1554030128751932e-17 -0.06099999999999988" quat="1.0 7.192838124322898e-19 1.1102230246324772e-16 2.375546113557656e-17" />

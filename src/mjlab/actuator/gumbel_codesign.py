@@ -192,7 +192,7 @@ class GumbelSoftmaxActuator(nn.Module):
 
   During rollout (inference mode):
     - Uses deterministic softmax assignment (no Gumbel noise)
-    - Applies soft saturation: τ_max_eff × tanh(τ_cmd / τ_max_eff)
+    - Applies hard clipping to the learned torque bound
     - Logs commanded torques for the codesign step
 
   During codesign step (gradient mode):
@@ -270,20 +270,24 @@ class GumbelSoftmaxActuator(nn.Module):
     return self.symmetry.expand_to_full(tau_eff_unique)  # (n_joints,)
 
   def forward(self, tau_command: torch.Tensor) -> torch.Tensor:
-    """Apply soft saturation during rollout (deterministic, no Gumbel).
+    """Apply the learned torque bound to commanded torques.
 
     Args:
       tau_command: Commanded torques, shape (num_envs, n_joints).
 
     Returns:
-      Saturated torques, same shape.
+      Bounded torques, same shape.
     """
-    with torch.no_grad():
-      tau_eff = self.tau_eff(use_gumbel=False)  # (n_joints,)
-      tau_eff_expanded = tau_eff.unsqueeze(0)  # (1, n_joints)
+    tau_eff = self.tau_eff(use_gumbel=False)  # (n_joints,)
+    tau_eff_expanded = tau_eff.unsqueeze(0)  # (1, n_joints)
+
+    # Keep the differentiable soft saturation available while training the
+    # surrogate, but use a hard physical clip once the assignment is being
+    # evaluated in rollout/eval mode.
+    if self.training:
       ratio = tau_command / (tau_eff_expanded + 1e-6)
-      saturated = tau_eff_expanded * torch.tanh(ratio)
-    return saturated
+      return tau_eff_expanded * torch.tanh(ratio)
+    return torch.clamp(tau_command, -tau_eff_expanded, tau_eff_expanded)
 
   def log_torques(self, tau_command: torch.Tensor) -> None:
     """Log commanded torques for the codesign optimizer step.

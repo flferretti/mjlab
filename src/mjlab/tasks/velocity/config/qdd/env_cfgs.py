@@ -293,8 +293,12 @@ def gbionics_qdd_rough_env_cfg(
   for reward_name in ["foot_clearance", "foot_slip"]:
     cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
   cfg.rewards["air_time"].weight = 0.0
-  cfg.rewards["foot_clearance"].weight = -0.1  # Modest penalty for ground contact during swing
-  cfg.rewards["foot_swing_height"].weight = -0.1  # Modest penalty for low foot trajectories
+  cfg.rewards[
+    "foot_clearance"
+  ].weight = -0.1  # Modest penalty for ground contact during swing
+  cfg.rewards[
+    "foot_swing_height"
+  ].weight = -0.1  # Modest penalty for low foot trajectories
   cfg.rewards["soft_landing"].weight = 0.0
   cfg.rewards["foot_slip"].weight = 0.0
 

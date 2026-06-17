@@ -21,6 +21,10 @@ Added
   primary names in the order they appear along the per-contact axis of the
   output tensors. This makes it possible to map a contact-data column back
   to the primary it belongs to (:issue:`914`).
+- Added a final gradient-codesign torque audit plot
+  (``codesign_torque_vs_limits.png``) in the AMP runner logs. The plot
+  compares per-joint learned ``tau_max`` against observed peak requested and
+  applied torques so torque-limit compliance is visible at a glance.
 
 Changed
 ^^^^^^^
@@ -76,6 +80,9 @@ Changed
 Fixed
 ^^^^^
 
+- Added a backward-compatibility import alias for the common typo
+  ``mjlab.trasks`` → ``mjlab.tasks`` so callable paths in old configs can
+  still resolve (e.g. ``...track_lin_vel_xy_exp``).
 - Gene01 Nohands velocity task now tracks the asset root for video
   rendering, so enabling training video no longer fails with
   ``entity_name/body_name required for ASSET_BODY origin type``.
