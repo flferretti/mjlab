@@ -76,8 +76,8 @@ Changed
 Fixed
 ^^^^^
 
-- Gene01 Nohands velocity task now sets a valid viewer body target
-  (``torso_1``), so enabling training video no longer fails with
+- Gene01 Nohands velocity task now tracks the asset root for video
+  rendering, so enabling training video no longer fails with
   ``entity_name/body_name required for ASSET_BODY origin type``.
 - Co-design validation and video generation now screen Pareto candidates by
   rollout walkability before honoring reward/efficiency selection. If the

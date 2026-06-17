@@ -30,6 +30,7 @@ from mjlab.sensor import (
 from mjlab.tasks.velocity import mdp
 from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.velocity.velocity_env_cfg import make_velocity_env_cfg
+from mjlab.viewer import ViewerConfig
 
 # AMP_JOINT_NAMES and AMP_DATASET_CFG are disabled; use standard PPO training instead.
 
@@ -52,7 +53,8 @@ def gbionics_gene01_nohands_flat_env_cfg(
 
   # -- Scene / Robot -----------------------------------------------------
   cfg.scene.entities = {"robot": get_gene01_nohands_robot_cfg()}
-  cfg.viewer.body_name = "torso_1"
+  cfg.viewer.origin_type = ViewerConfig.OriginType.ASSET_ROOT
+  cfg.viewer.entity_name = "robot"
 
   # Set raycast sensor frame to Gene01 root link (torso).
   for sensor in cfg.scene.sensors or ():
