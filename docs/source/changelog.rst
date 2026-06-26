@@ -25,6 +25,9 @@ Added
   (``codesign_torque_vs_limits.png``) in the AMP runner logs. The plot
   compares per-joint learned ``tau_max`` against observed peak requested and
   applied torques so torque-limit compliance is visible at a glance.
+- Added ``Mjlab-Velocity-Flat-Gbionics-Gene01-Nohands-MotorCond``, a
+  motor-conditioned Gene01 flat-velocity task that randomizes per-joint
+  ``tau_max`` at reset and appends normalized torque limits to observations.
 
 Changed
 ^^^^^^^
