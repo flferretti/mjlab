@@ -1096,6 +1096,85 @@ def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
     print(f"\nSaved results to {out_path}")
 
 
+def _design_cost(genome: dict, cfg: CodesignConfig) -> tuple[float, float, int]:
+  """Recompute (total_cost, cum_tau, n_types) for one genome under ``cfg`` weights.
+
+  Mirrors the cost model in ``_make_problem._evaluate`` so that a winner's raw
+  performance can be recovered from its scalarized fitness via
+  ``perf = total_cost - fitness``.
+  """
+  _tau_vec, n_choices, cum_tau = decode_individual(genome, cfg)
+  n_types = count_motor_types(genome, cfg)
+  base_cost = cfg.w_count * n_choices + cfg.w_torque * (cum_tau / cfg.tau_ref)
+  excess_penalty = max(0.0, float(n_types - 3)) * cfg.w_motor_type_penalty
+  return base_cost + excess_penalty, float(cum_tau), int(n_types)
+
+
+def run_w_torque_sweep(
+  backend: CodesignBackend,
+  cfg: CodesignConfig,
+  w_torque_values: list[float],
+  pop_size: int,
+  n_seeds: int,
+  generations: int,
+  seed: int,
+  out_path: str | None,
+) -> None:
+  """Trace a reward-vs-cost Pareto front by sweeping ``w_torque``.
+
+  The single-objective GA collapses reward and cost into one scalar, so a single
+  run returns one design. Re-running it at a range of torque-cost weights walks
+  the reward/cost trade-off: small ``w_torque`` favours high-torque high-reward
+  designs, large ``w_torque`` favours cheap low-torque designs. Each run reuses
+  the (expensive) Isaac Lab env. Winners are stored in the legacy multi-objective
+  layout ``F = [[-performance, cum_tau], ...]`` so ``validate_codesign`` /
+  ``visualize_codesign`` can select by reward or efficiency.
+  """
+  designs: list[dict] = []
+  f_rows: list[list[float]] = []
+  print(f"\n=== w_torque sweep over {w_torque_values} ===")
+  for wt in w_torque_values:
+    cfg.w_torque = wt
+    print(f"\n--- w_torque = {wt} ---")
+    result = run_optimization(
+      backend, cfg, pop_size, n_seeds, generations, seed=seed, seed_genome=None
+    )
+    X = np.atleast_1d(result.X)
+    F = np.atleast_2d(result.F)
+    best = int(np.argmin(F[:, 0]))
+    genome = X[best] if isinstance(X[best], dict) else dict(X[best])
+    fitness = float(F[best, 0])
+    total_cost, cum_tau, n_types = _design_cost(genome, cfg)
+    perf = total_cost - fitness
+    designs.append(dict(genome))
+    f_rows.append([-perf, cum_tau])
+    design = {
+      g.name: round(float(decode_individual(genome, cfg)[0][
+        cfg.joint_order.index(g.joints[0])
+      ]), 1)
+      for g in cfg.groups
+    }
+    print(
+      f"  winner: perf={perf:.3f} cum_tau={cum_tau:.1f}Nm "
+      f"motor_types={n_types} design={design}"
+    )
+
+  F_arr = np.array(f_rows, dtype=np.float64)
+  print("\n=== Sweep Pareto front (reward vs cum_tau) ===")
+  print(f"{'w_torque':>9} {'perf':>10} {'cum_tau(Nm)':>12}")
+  for wt, row in zip(w_torque_values, f_rows, strict=True):
+    print(f"{wt:9.3f} {-row[0]:10.3f} {row[1]:12.1f}")
+  if out_path:
+    np.savez(
+      out_path,
+      X=np.array([dict(d) for d in designs], dtype=object),
+      F=F_arr,
+      groups=[g.name for g in cfg.groups],
+      w_torque_values=np.array(w_torque_values, dtype=np.float64),
+    )
+    print(f"\nSaved sweep Pareto set to {out_path}")
+
+
 def main() -> None:
   p = argparse.ArgumentParser(description=__doc__)
   p.add_argument("--backend", choices=["mjlab", "isaaclab", "sim2sim"], default="mjlab")
@@ -1126,6 +1205,13 @@ def main() -> None:
   p.add_argument("--seed", type=int, default=0)
   p.add_argument("--w-count", type=float, default=1.0)
   p.add_argument("--w-torque", type=float, default=1.0)
+  p.add_argument(
+    "--w-torque-sweep",
+    default=None,
+    help="Comma-separated list of w_torque values (e.g. '0.25,0.5,1,2,4,8'). "
+    "Runs the GA once per value, reusing the same env, and aggregates the "
+    "per-value winners into a reward-vs-cost Pareto front. Overrides --w-torque.",
+  )
   p.add_argument("--out", default="codesign_pareto.npz")
   # Performance objective (5): walkability score, task reward, or AMP alignment.
   p.add_argument("--objective", choices=["reward", "amp", "walk"], default="walk")
@@ -1229,16 +1315,29 @@ def main() -> None:
   )
 
   try:
-    result = run_optimization(
-      backend,
-      cfg,
-      pop_size=args.pop_size,
-      n_seeds=args.n_seeds,
-      generations=args.generations,
-      seed=args.seed,
-      seed_genome=WALK_SEED_GENOME if args.objective == "walk" else None,
-    )
-    report_pareto(result, cfg, args.out)
+    if args.w_torque_sweep is not None:
+      sweep_values = [float(v) for v in args.w_torque_sweep.split(",") if v.strip()]
+      run_w_torque_sweep(
+        backend,
+        cfg,
+        sweep_values,
+        pop_size=args.pop_size,
+        n_seeds=args.n_seeds,
+        generations=args.generations,
+        seed=args.seed,
+        out_path=args.out,
+      )
+    else:
+      result = run_optimization(
+        backend,
+        cfg,
+        pop_size=args.pop_size,
+        n_seeds=args.n_seeds,
+        generations=args.generations,
+        seed=args.seed,
+        seed_genome=WALK_SEED_GENOME if args.objective == "walk" else None,
+      )
+      report_pareto(result, cfg, args.out)
   finally:
     if simulation_app is not None:
       simulation_app.close()
