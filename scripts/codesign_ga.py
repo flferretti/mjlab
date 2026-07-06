@@ -1203,6 +1203,19 @@ def main() -> None:
 
   # The env batch must hold the whole population times the per-design seeds.
   num_envs = args.pop_size * args.n_seeds
+
+  # Isaac Lab requires the Omniverse Kit app to be launched *before* any isaaclab
+  # import or env creation. Do it here (headless) so the IsaacLabBackend can build
+  # the motor-conditioned gene env. Keep a handle to close it cleanly at the end.
+  simulation_app = None
+  if args.backend == "isaaclab":
+    from isaaclab.app import AppLauncher  # type: ignore
+
+    app_launcher = AppLauncher(headless=True)
+    simulation_app = app_launcher.app
+    import gb_rl_locomotion.networks  # type: ignore # noqa: F401
+    import gb_rl_locomotion.tasks  # type: ignore # noqa: F401  (registers gym tasks)
+
   backend = build_backend(
     args.backend,
     task=args.task,
@@ -1215,16 +1228,20 @@ def main() -> None:
     device=args.device,
   )
 
-  result = run_optimization(
-    backend,
-    cfg,
-    pop_size=args.pop_size,
-    n_seeds=args.n_seeds,
-    generations=args.generations,
-    seed=args.seed,
-    seed_genome=WALK_SEED_GENOME if args.objective == "walk" else None,
-  )
-  report_pareto(result, cfg, args.out)
+  try:
+    result = run_optimization(
+      backend,
+      cfg,
+      pop_size=args.pop_size,
+      n_seeds=args.n_seeds,
+      generations=args.generations,
+      seed=args.seed,
+      seed_genome=WALK_SEED_GENOME if args.objective == "walk" else None,
+    )
+    report_pareto(result, cfg, args.out)
+  finally:
+    if simulation_app is not None:
+      simulation_app.close()
 
 
 if __name__ == "__main__":
