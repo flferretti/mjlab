@@ -31,6 +31,7 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 import torch
+from codesign_motor_model import MotorCostModel
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import pdist
 from scipy.spatial.transform import Rotation
@@ -176,6 +177,26 @@ class CodesignConfig:
   This makes designs with >3 types Pareto-dominated, as the ~0.05 reward difference
   cannot overcome 50-150 cost difference.
   """
+  cost_model: MotorCostModel | None = None
+  """Physical actuator mass/cost model (see ``codesign_motor_model``).
+
+  When set, the capacity term uses the model's estimated total actuator mass (kg)
+  instead of the legacy linear ``cum_tau / tau_ref`` proxy. ``None`` preserves the
+  original behavior. A ``linear`` model reproduces the legacy proxy up to the
+  anchored kg/Nm constant (numerically almost identical), while ``powerlaw`` /
+  ``catalog`` capture the sub-linear mass-vs-torque scaling of real BLDC/QDD units.
+  """
+
+  def capacity_cost(self, tau_per_joint: np.ndarray, cum_tau: float) -> float:
+    """Normalized hardware-capacity cost term (dimensionless).
+
+    With a ``cost_model`` this is the total actuator mass (kg); otherwise it falls
+    back to the legacy ``cum_tau / tau_ref`` proxy. Both are of comparable
+    magnitude for the gene design (~15-40), so ``w_torque`` stays interpretable.
+    """
+    if self.cost_model is not None:
+      return self.cost_model.design_mass(tau_per_joint)
+    return cum_tau / self.tau_ref
 
 
 # ---------------------------------------------------------------------------
@@ -929,7 +950,13 @@ def build_backend(name: str, **kwargs) -> CodesignBackend:
 # ---------------------------------------------------------------------------
 
 
-def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
+def _make_problem(
+  backend: CodesignBackend,
+  cfg: CodesignConfig,
+  n_seeds: int,
+  multiobjective: bool = False,
+  max_motor_types: int = 3,
+):
   # Pure continuous variables: per group, optimize torque limit (Nm)
   # Ordered dict preserves variable order for encoding/decoding
   from collections import OrderedDict
@@ -944,9 +971,16 @@ def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
 
   class CodesignProblem(Problem):
     def __init__(self) -> None:
-      # Single scalarized objective: performance - cost
-      # Increasing w_count/w_torque directly prefers cheaper designs
-      super().__init__(vars=variables, n_obj=1)
+      if multiobjective:
+        # True bi-objective front: minimize (-performance, actuator mass). NSGA-II
+        # returns the whole non-dominated set in ONE run (no w_torque scalarization
+        # or sweep). The motor-diversity limit is a hard inequality constraint so
+        # designs are pushed toward <= max_motor_types distinct actuators.
+        super().__init__(vars=variables, n_obj=2, n_ieq_constr=1)
+      else:
+        # Single scalarized objective: performance - cost
+        # Increasing w_count/w_torque directly prefers cheaper designs
+        super().__init__(vars=variables, n_obj=1)
 
     def _evaluate(self, X, out, *args, **kwargs):
       # X is a 1-D object array of genome dicts (continuous variables only).
@@ -963,11 +997,31 @@ def _make_problem(backend: CodesignBackend, cfg: CodesignConfig, n_seeds: int):
       )
       performance = backend.evaluate(tau_LJ, n_seeds)  # (L,)
 
+      if multiobjective:
+        # Objective 1: -reward (minimized). Objective 2: total actuator mass/cost.
+        # Constraint: n_types - max_motor_types <= 0.
+        f_rows, g_rows = [], []
+        for perf, tau_vec, (_n_choices, cum_tau), n_types in zip(
+          performance, tau_rows, costs, n_motor_types, strict=True
+        ):
+          mass_cost = cfg.capacity_cost(tau_vec, cum_tau)
+          f_rows.append([-float(perf), float(mass_cost)])
+          g_rows.append([float(n_types) - float(max_motor_types)])
+        out["F"] = np.array(f_rows, dtype=np.float64)
+        out["G"] = np.array(g_rows, dtype=np.float64)
+        return
+
       # Scalarized objective: maximize performance minus hardware cost
       f_obj = []
-      for perf, (n_choices, cum_tau), n_types in zip(performance, costs, n_motor_types, strict=True):
-        # Base cost: diversity (number of unique motor models) + total capacity
-        base_cost = cfg.w_count * n_choices + cfg.w_torque * (cum_tau / cfg.tau_ref)
+      for perf, tau_vec, (n_choices, cum_tau), n_types in zip(
+        performance, tau_rows, costs, n_motor_types, strict=True
+      ):
+        # Base cost: diversity (number of unique motor models) + total capacity.
+        # ``capacity_cost`` uses the physical mass model when configured, else the
+        # legacy ``cum_tau / tau_ref`` proxy.
+        base_cost = cfg.w_count * n_choices + cfg.w_torque * cfg.capacity_cost(
+          tau_vec, cum_tau
+        )
 
         # STRONG penalty: strongly discourage >3 types so designs naturally
         # evolve toward 2-3 types. Must exceed typical reward variance.
@@ -994,6 +1048,8 @@ def run_optimization(
   generations: int,
   seed: int = 0,
   seed_genome: dict[str, float] | None = None,
+  multiobjective: bool = False,
+  max_motor_types: int = 3,
 ):
   from pymoo.algorithms.moo.nsga2 import NSGA2
   from pymoo.core.mixed import (
@@ -1004,7 +1060,13 @@ def run_optimization(
   from pymoo.core.sampling import Sampling
   from pymoo.optimize import minimize
 
-  problem = _make_problem(backend, cfg, n_seeds)
+  problem = _make_problem(
+    backend,
+    cfg,
+    n_seeds,
+    multiobjective=multiobjective,
+    max_motor_types=max_motor_types,
+  )
 
   class SeededMixedVariableSampling(Sampling):
     def __init__(self, seed_genome: dict[str, float] | None) -> None:
@@ -1061,6 +1123,13 @@ def run_optimization(
 
 
 def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
+  if result.X is None or result.F is None:
+    print(
+      "\n⚠️  No feasible design found (all violated the motor-type constraint). "
+      "Try raising --max-motor-types, increasing --generations/--pop-size, or "
+      "widening TORQUE_CLUSTER_THRESHOLD_NM."
+    )
+    return
   X = np.atleast_1d(result.X)
   F = np.atleast_2d(result.F)
 
@@ -1068,6 +1137,33 @@ def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
   if F.ndim != 2 or F.shape[1] < 1:
     print(f"\n⚠️  Unexpected result shape: F.shape={F.shape}")
     print(f"Expected (n_designs, 1+) objectives, got {F.shape}")
+    return
+
+  if F.shape[1] >= 2:
+    # Bi-objective front: F[:,0] = -reward, F[:,1] = actuator mass/cost.
+    # Report the non-dominated set from best reward to cheapest.
+    order = np.argsort(F[:, 0])
+    print("\n=== Pareto front (bi-objective: reward vs mass) ===")
+    print(f"{'reward':>8} {'mass/cost':>10} {'types':>6} {'cumTau(Nm)':>11}  design")
+    for i in order:
+      genome = X[i] if isinstance(X[i], dict) else dict(X[i])
+      tau_vec, _n_variants, cum_tau = decode_individual(genome, cfg)
+      n_motor_types = count_motor_types(genome, cfg)
+      design = {
+        g.name: round(float(tau_vec[cfg.joint_order.index(g.joints[0])]), 1)
+        for g in cfg.groups
+      }
+      print(
+        f"{-F[i, 0]:8.3f} {F[i, 1]:10.2f} {n_motor_types:6d} {cum_tau:11.1f}  {design}"
+      )
+    if out_path:
+      np.savez(
+        out_path,
+        X=np.array([dict(x) for x in X], dtype=object),
+        F=F,
+        groups=[g.name for g in cfg.groups],
+      )
+      print(f"\nSaved results to {out_path}")
     return
 
   # For single-objective, sort by fitness (ascending = lower is better)
@@ -1103,9 +1199,11 @@ def _design_cost(genome: dict, cfg: CodesignConfig) -> tuple[float, float, int]:
   performance can be recovered from its scalarized fitness via
   ``perf = total_cost - fitness``.
   """
-  _tau_vec, n_choices, cum_tau = decode_individual(genome, cfg)
+  tau_vec, n_choices, cum_tau = decode_individual(genome, cfg)
   n_types = count_motor_types(genome, cfg)
-  base_cost = cfg.w_count * n_choices + cfg.w_torque * (cum_tau / cfg.tau_ref)
+  base_cost = cfg.w_count * n_choices + cfg.w_torque * cfg.capacity_cost(
+    tau_vec, cum_tau
+  )
   excess_penalty = max(0.0, float(n_types - 3)) * cfg.w_motor_type_penalty
   return base_cost + excess_penalty, float(cum_tau), int(n_types)
 
@@ -1149,9 +1247,9 @@ def run_w_torque_sweep(
     designs.append(dict(genome))
     f_rows.append([-perf, cum_tau])
     design = {
-      g.name: round(float(decode_individual(genome, cfg)[0][
-        cfg.joint_order.index(g.joints[0])
-      ]), 1)
+      g.name: round(
+        float(decode_individual(genome, cfg)[0][cfg.joint_order.index(g.joints[0])]), 1
+      )
       for g in cfg.groups
     }
     print(
@@ -1206,11 +1304,40 @@ def main() -> None:
   p.add_argument("--w-count", type=float, default=1.0)
   p.add_argument("--w-torque", type=float, default=1.0)
   p.add_argument(
+    "--cost-model",
+    choices=["legacy", "linear", "powerlaw", "catalog"],
+    default="legacy",
+    help="Hardware-capacity cost model. 'legacy' uses the linear cum_tau/tau_ref "
+    "proxy (original behavior). 'linear'/'powerlaw'/'catalog' use the physical "
+    "actuator mass (kg) from codesign_motor_model; 'powerlaw' (mass~tau^alpha) is "
+    "the grounded default for BLDC/QDD actuators.",
+  )
+  p.add_argument(
+    "--cost-alpha",
+    type=float,
+    default=0.75,
+    help="Power-law exponent for --cost-model powerlaw (0.7-0.8 for BLDC/QDD).",
+  )
+  p.add_argument(
     "--w-torque-sweep",
     default=None,
     help="Comma-separated list of w_torque values (e.g. '0.25,0.5,1,2,4,8'). "
     "Runs the GA once per value, reusing the same env, and aggregates the "
     "per-value winners into a reward-vs-cost Pareto front. Overrides --w-torque.",
+  )
+  p.add_argument(
+    "--multiobjective",
+    action="store_true",
+    help="Run a true bi-objective NSGA-II (minimize -reward and actuator mass) in "
+    "ONE pass, returning the whole non-dominated front. No w_torque scalarization "
+    "or sweep. Motor-type diversity is enforced as a <= --max-motor-types "
+    "constraint. Overrides --w-torque-sweep.",
+  )
+  p.add_argument(
+    "--max-motor-types",
+    type=int,
+    default=3,
+    help="Distinct-actuator limit enforced as a constraint in --multiobjective mode.",
   )
   p.add_argument("--out", default="codesign_pareto.npz")
   # Performance objective (5): walkability score, task reward, or AMP alignment.
@@ -1267,13 +1394,25 @@ def main() -> None:
   elif args.policy is None:
     p.error("--policy is required unless --smoke-test is set.")
 
+  cost_model = (
+    None
+    if args.cost_model == "legacy"
+    else MotorCostModel(kind=args.cost_model, alpha=args.cost_alpha)
+  )
   cfg = CodesignConfig(
     groups=groups,
     joint_order=joint_order,
     tau_obs_range=tau_obs_range,
     w_count=args.w_count,
     w_torque=args.w_torque,
+    cost_model=cost_model,
   )
+  if cost_model is not None:
+    print(
+      f"[Config] cost-model={args.cost_model}"
+      + (f" (alpha={args.cost_alpha})" if args.cost_model == "powerlaw" else "")
+      + " -> capacity term is total actuator mass (kg)."
+    )
 
   # Build the performance metric (objective 5).
   metric: PerformanceMetric
@@ -1315,7 +1454,20 @@ def main() -> None:
   )
 
   try:
-    if args.w_torque_sweep is not None:
+    if args.multiobjective:
+      result = run_optimization(
+        backend,
+        cfg,
+        pop_size=args.pop_size,
+        n_seeds=args.n_seeds,
+        generations=args.generations,
+        seed=args.seed,
+        seed_genome=WALK_SEED_GENOME if args.objective == "walk" else None,
+        multiobjective=True,
+        max_motor_types=args.max_motor_types,
+      )
+      report_pareto(result, cfg, args.out)
+    elif args.w_torque_sweep is not None:
       sweep_values = [float(v) for v in args.w_torque_sweep.split(",") if v.strip()]
       run_w_torque_sweep(
         backend,
