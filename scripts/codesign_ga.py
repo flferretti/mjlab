@@ -91,6 +91,63 @@ WALK_SEED_GENOME: dict[str, float] = {
   "tau_ankle_roll": 29.87046241760254,
 }
 
+# ---------------------------------------------------------------------------
+# Gene01 (nowrist_noneck) whole-body humanoid — 22 actuated joints.
+# The motor-conditioned stairs policy ingests a 22-dim ``motor_tau_max`` block
+# normalized over ``GENE_TAU_OBS_RANGE``. Joint order MUST match the training
+# obs term (``GENE01_NOWRIST_NONECK_ACTUATED_JOINTS`` with ``preserve_order``),
+# because the tau buffer, the observation and the effort limits are all keyed by
+# this ordering. See gb_rl_locomotion assets/gene01_nowrist_noneck.py.
+GENE_JOINT_ORDER: list[str] = [
+  "l_hip_pitch", "r_hip_pitch", "torso_yaw",
+  "l_hip_roll", "r_hip_roll", "torso_roll",
+  "l_hip_yaw", "r_hip_yaw",
+  "l_shoulder_pitch", "r_shoulder_pitch",
+  "l_knee", "r_knee",
+  "l_shoulder_roll", "r_shoulder_roll",
+  "l_ankle_motor_1", "l_ankle_motor_2",
+  "r_ankle_motor_1", "r_ankle_motor_2",
+  "l_shoulder_yaw", "r_shoulder_yaw",
+  "l_elbow", "r_elbow",
+]  # fmt: skip
+
+# Absolute torque range (Nm) the gene motor-conditioned policy was trained with
+# (gb_rl_locomotion .../gene01_nowrist_noneck/motor_cond_*_env_cfg.py MOTOR_TAU_RANGE).
+GENE_TAU_OBS_RANGE: tuple[float, float] = (40.0, 200.0)
+
+# Symmetric actuator groups (L/R tied); torso joints are independent single-joint
+# groups. Search bounds are clamped to the trained ``GENE_TAU_OBS_RANGE`` so the
+# frozen policy only ever sees in-distribution tau conditioning.
+GENE_GROUPS: list[ActuatorGroup] = [
+  ActuatorGroup("hip_pitch", ("l_hip_pitch", "r_hip_pitch"), 120.0, GENE_TAU_OBS_RANGE),
+  ActuatorGroup("hip_roll", ("l_hip_roll", "r_hip_roll"), 120.0, GENE_TAU_OBS_RANGE),
+  ActuatorGroup("hip_yaw", ("l_hip_yaw", "r_hip_yaw"), 120.0, GENE_TAU_OBS_RANGE),
+  ActuatorGroup("knee", ("l_knee", "r_knee"), 120.0, GENE_TAU_OBS_RANGE),
+  ActuatorGroup(
+    "ankle_motor_1", ("l_ankle_motor_1", "r_ankle_motor_1"), 120.0, GENE_TAU_OBS_RANGE
+  ),
+  ActuatorGroup(
+    "ankle_motor_2", ("l_ankle_motor_2", "r_ankle_motor_2"), 120.0, GENE_TAU_OBS_RANGE
+  ),
+  ActuatorGroup(
+    "shoulder_pitch",
+    ("l_shoulder_pitch", "r_shoulder_pitch"),
+    120.0,
+    GENE_TAU_OBS_RANGE,
+  ),
+  ActuatorGroup(
+    "shoulder_roll", ("l_shoulder_roll", "r_shoulder_roll"), 120.0, GENE_TAU_OBS_RANGE
+  ),
+  ActuatorGroup(
+    "shoulder_yaw", ("l_shoulder_yaw", "r_shoulder_yaw"), 120.0, GENE_TAU_OBS_RANGE
+  ),
+  ActuatorGroup("elbow", ("l_elbow", "r_elbow"), 120.0, GENE_TAU_OBS_RANGE),
+  ActuatorGroup("torso_yaw", ("torso_yaw",), 120.0, GENE_TAU_OBS_RANGE),
+  ActuatorGroup("torso_roll", ("torso_roll",), 120.0, GENE_TAU_OBS_RANGE),
+]
+
+GENE_TASK_DEFAULT = "gb_rl_locomotion-amp-gene01_nowrist_noneck-motorcond-play-rough-V0"
+
 
 @dataclass
 class CodesignConfig:
@@ -705,18 +762,43 @@ class IsaacLabBackend(CodesignBackend):
     # Disable training-time torque randomization (configclass attr, not a dict).
     if hasattr(env_cfg.events, "randomize_motor_tau_max"):
       env_cfg.events.randomize_motor_tau_max = None
+    # Evaluate every design under the same fixed forward-walking command so the
+    # reward score reflects the design, not the sampled command.
+    cmd = getattr(getattr(env_cfg, "commands", None), "base_velocity", None)
+    if cmd is not None:
+      cmd.ranges.lin_vel_x = (0.8, 0.8)
+      cmd.ranges.lin_vel_y = (0.0, 0.0)
+      cmd.ranges.ang_vel_z = (0.0, 0.0)
+      if hasattr(cmd, "rel_standing_envs"):
+        cmd.rel_standing_envs = 0.0
+      if hasattr(cmd, "rel_heading_envs"):
+        cmd.rel_heading_envs = 0.0
+      if hasattr(cmd, "heading_command"):
+        cmd.heading_command = False
     self.env = gym.make(task, cfg=env_cfg)
 
-    if policy_path is not None:
-      self.policy_module = torch.jit.load(policy_path, map_location=device).eval()
-    else:
+    if policy_path is None:
       self.policy_module = RandomPolicy(self.action_dim(), device)
+    elif policy_path.endswith(".onnx"):
+      # Reuse the exported ONNX directly (no jit re-export). Inference runs on
+      # CPU per env; fine for modest populations. The gene stairs ONNX obs dim
+      # (147) matches the env "policy" group exactly, so OnnxPolicy passes it
+      # through unchanged.
+      self.policy_module = OnnxPolicy(policy_path, device=device).eval()
+    else:
+      self.policy_module = torch.jit.load(policy_path, map_location=device).eval()
 
     from gb_rl_locomotion.mdp.motor_randomization import (  # type: ignore
       set_motor_tau_max,
     )
+    from isaaclab.managers import SceneEntityCfg  # type: ignore
 
     self._set_tau = set_motor_tau_max
+    # The tau buffer / obs term / effort limits are all keyed by this ordered
+    # actuated-joint selector; it MUST match ``joint_order`` (see GENE_JOINT_ORDER).
+    self._motor_asset_cfg = SceneEntityCfg(
+      "robot", joint_names=list(joint_order), preserve_order=True
+    )
     self._env_ids = torch.arange(num_envs, device=device)
 
   def action_dim(self) -> int:
@@ -745,7 +827,7 @@ class IsaacLabBackend(CodesignBackend):
       self.env.unwrapped,
       self._env_ids,
       tau_full,
-      self.joint_order,
+      self._motor_asset_cfg,
       self._tau_obs_range,
     )
 
@@ -1017,7 +1099,19 @@ def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
 def main() -> None:
   p = argparse.ArgumentParser(description=__doc__)
   p.add_argument("--backend", choices=["mjlab", "isaaclab", "sim2sim"], default="mjlab")
-  p.add_argument("--task", default="Mjlab-Velocity-Flat-Gbionics-QDD-MotorCond")
+  p.add_argument(
+    "--robot",
+    choices=["qdd", "gene"],
+    default="qdd",
+    help="Actuator design space + joint order. 'qdd' = QDD lower body (12 leg "
+    "joints); 'gene' = Gene01 nowrist_noneck whole body (22 actuated joints).",
+  )
+  p.add_argument(
+    "--task",
+    default=None,
+    help="Env/task id. Defaults per --robot (QDD MotorCond for qdd, gene01 "
+    "nowrist_noneck motorcond play-rough for gene).",
+  )
   p.add_argument(
     "--policy",
     default=None,
@@ -1052,6 +1146,29 @@ def main() -> None:
     help="Tiny run (pop=4, seeds=1, steps=5, gens=1) to validate the pipeline.",
   )
   args = p.parse_args()
+
+  # Resolve the robot-specific design space, default task and tau range.
+  if args.robot == "gene":
+    groups, joint_order, tau_obs_range = (
+      GENE_GROUPS,
+      GENE_JOINT_ORDER,
+      GENE_TAU_OBS_RANGE,
+    )
+    default_task = GENE_TASK_DEFAULT
+    # The walkability metric relies on the QDD-only sim2sim MuJoCo-C rollout; the
+    # gene design space is evaluated in Isaac Lab against task reward instead.
+    if args.objective == "walk":
+      print("[Config] robot=gene: 'walk' objective unsupported; using 'reward'.")
+      args.objective = "reward"
+    if args.backend == "mjlab":
+      print("[Config] robot=gene: switching backend to isaaclab.")
+      args.backend = "isaaclab"
+  else:
+    groups, joint_order, tau_obs_range = QDD_GROUPS, QDD_JOINT_ORDER, TAU_OBS_RANGE
+    default_task = "Mjlab-Velocity-Flat-Gbionics-QDD-MotorCond"
+  if args.task is None:
+    args.task = default_task
+
   if args.objective == "walk" and args.backend != "sim2sim":
     print("[Config] Switching to sim2sim backend for walk objective.")
     args.backend = "sim2sim"
@@ -1065,9 +1182,9 @@ def main() -> None:
     p.error("--policy is required unless --smoke-test is set.")
 
   cfg = CodesignConfig(
-    groups=QDD_GROUPS,
-    joint_order=QDD_JOINT_ORDER,
-    tau_obs_range=TAU_OBS_RANGE,
+    groups=groups,
+    joint_order=joint_order,
+    tau_obs_range=tau_obs_range,
     w_count=args.w_count,
     w_torque=args.w_torque,
   )
