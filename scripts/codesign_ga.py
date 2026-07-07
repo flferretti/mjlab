@@ -27,6 +27,9 @@ from __future__ import annotations
 
 import abc
 import argparse
+import os
+import sys
+from collections import Counter
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -212,6 +215,18 @@ def group_var_names(group: ActuatorGroup) -> tuple[str]:
   return (f"tau_{group.name}",)
 
 
+def _cluster_group_torques(genome: dict[str, float], cfg: CodesignConfig) -> np.ndarray:
+  """Cluster per-group torques using the configured Nm threshold."""
+  taus = np.array([float(genome[f"tau_{group.name}"]) for group in cfg.groups]).reshape(
+    -1, 1
+  )
+  if len(taus) <= 1:
+    return np.ones(len(taus), dtype=int)
+  distances = pdist(taus, metric="euclidean")
+  linkage_matrix = linkage(distances, method="complete")
+  return fcluster(linkage_matrix, t=TORQUE_CLUSTER_THRESHOLD_NM, criterion="distance")
+
+
 def count_motor_types(genome: dict[str, float], cfg: CodesignConfig) -> int:
   """Count distinct motor types using hierarchical clustering.
 
@@ -240,25 +255,7 @@ def count_motor_types(genome: dict[str, float], cfg: CodesignConfig) -> int:
     2. Cut dendrogram at distance threshold (12.0 Nm)
     3. Count resulting clusters
   """
-  taus = np.array([float(genome[f"tau_{group.name}"]) for group in cfg.groups]).reshape(
-    -1, 1
-  )  # Reshape for scipy
-
-  # Hierarchical clustering (single linkage is sensitive, complete is robust)
-  if len(taus) <= 1:
-    return len(taus)
-
-  # Compute pairwise distances and build dendrogram
-  distances = pdist(taus, metric="euclidean")
-  linkage_matrix = linkage(distances, method="complete")
-
-  # Cut at threshold: near-identical values should not form separate types.
-  # (Complete linkage: max distance between any pair in cluster)
-  cluster_labels = fcluster(
-    linkage_matrix, t=TORQUE_CLUSTER_THRESHOLD_NM, criterion="distance"
-  )
-
-  return len(np.unique(cluster_labels))
+  return len(np.unique(_cluster_group_torques(genome, cfg)))
 
 
 def decode_individual(
@@ -288,6 +285,56 @@ def decode_individual(
 
   tau_vec = np.array([joint_tau[j] for j in cfg.joint_order], dtype=np.float32)
   return tau_vec, n_choices, cumulative
+
+
+def _group_design(genome: dict[str, float], cfg: CodesignConfig) -> dict[str, float]:
+  return {g.name: round(float(genome[f"tau_{g.name}"]), 1) for g in cfg.groups}
+
+
+def _per_joint_torques(tau_vec: np.ndarray, cfg: CodesignConfig) -> dict[str, float]:
+  return {
+    j: round(float(tau), 1)
+    for j, tau in zip(cfg.joint_order, tau_vec.tolist(), strict=True)
+  }
+
+
+def _motor_selection_text(genome: dict[str, float], cfg: CodesignConfig) -> str:
+  tau_vec, _, _ = decode_individual(genome, cfg)
+  if cfg.cost_model is not None and cfg.cost_model.kind == "catalog":
+    skus = cfg.cost_model.sku_names(tau_vec)
+    counts = Counter(skus)
+    return ", ".join(f"{n}x{sku}" for sku, n in sorted(counts.items()))
+
+  labels = _cluster_group_torques(genome, cfg)
+  cluster_groups: dict[int, list[str]] = {}
+  cluster_taus: dict[int, list[float]] = {}
+  for group, label in zip(cfg.groups, labels, strict=True):
+    cluster_groups.setdefault(int(label), []).append(group.name)
+    cluster_taus.setdefault(int(label), []).append(float(genome[f"tau_{group.name}"]))
+  blocks: list[str] = []
+  for idx, label in enumerate(sorted(cluster_groups), start=1):
+    mean_tau = float(np.mean(cluster_taus[label]))
+    names = ",".join(cluster_groups[label])
+    blocks.append(f"type{idx}~{mean_tau:.1f}Nm[{names}]")
+  return " | ".join(blocks)
+
+
+def _print_final_solution_summary(
+  title: str,
+  genome: dict[str, float],
+  cfg: CodesignConfig,
+  reward: float,
+  cost: float,
+) -> None:
+  tau_vec, _n_variants, cum_tau = decode_individual(genome, cfg)
+  n_types = count_motor_types(genome, cfg)
+  print(f"\n=== Final optimized design ({title}) ===")
+  print(
+    f"reward={reward:.3f} mass/cost={cost:.3f} cum_tau={cum_tau:.1f}Nm types={n_types}"
+  )
+  print(f"group_torques_nm={_group_design(genome, cfg)}")
+  print(f"motor_selection={_motor_selection_text(genome, cfg)}")
+  print(f"per_joint_torques_nm={_per_joint_torques(tau_vec, cfg)}")
 
 
 # ---------------------------------------------------------------------------
@@ -1156,6 +1203,26 @@ def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
       print(
         f"{-F[i, 0]:8.3f} {F[i, 1]:10.2f} {n_motor_types:6d} {cum_tau:11.1f}  {design}"
       )
+    rewards = -F[:, 0]
+    costs = F[:, 1]
+    max_reward = float(np.max(rewards))
+    keep = rewards >= 0.97 * max_reward
+    efficiency = np.full_like(costs, fill_value=-np.inf, dtype=np.float64)
+    np.divide(rewards, costs, out=efficiency, where=costs > 0)
+    candidate_idx = np.where(keep)[0]
+    best_eff_idx = int(
+      candidate_idx[np.argmax(efficiency[candidate_idx])] if len(candidate_idx) else 0
+    )
+    best_genome = (
+      X[best_eff_idx] if isinstance(X[best_eff_idx], dict) else dict(X[best_eff_idx])
+    )
+    _print_final_solution_summary(
+      title="efficiency pick from Pareto front",
+      genome=best_genome,
+      cfg=cfg,
+      reward=float(rewards[best_eff_idx]),
+      cost=float(costs[best_eff_idx]),
+    )
     if out_path:
       np.savez(
         out_path,
@@ -1182,6 +1249,18 @@ def report_pareto(result, cfg: CodesignConfig, out_path: str | None) -> None:
     }
     print(f"{fitness:10.3f} {n_motor_types:7d} {cum_tau:11.1f}  {design}")
     rows.append((fitness, n_motor_types, cum_tau, design))
+  best_idx = int(order[0])
+  best_genome = X[best_idx] if isinstance(X[best_idx], dict) else dict(X[best_idx])
+  best_fitness = float(F[best_idx, 0])
+  best_cost, _cum_tau, _n_types = _design_cost(best_genome, cfg)
+  best_reward = best_cost - best_fitness
+  _print_final_solution_summary(
+    title="best scalarized fitness",
+    genome=best_genome,
+    cfg=cfg,
+    reward=best_reward,
+    cost=best_cost,
+  )
   if out_path:
     np.savez(
       out_path,
@@ -1340,6 +1419,18 @@ def main() -> None:
     help="Distinct-actuator limit enforced as a constraint in --multiobjective mode.",
   )
   p.add_argument("--out", default="codesign_pareto.npz")
+  p.add_argument(
+    "--wandb",
+    action="store_true",
+    help="Log generation metrics + final Pareto "
+    "front to Weights & Biases (requires prior `wandb login`).",
+  )
+  p.add_argument("--wandb-project", default="gene_codesign")
+  p.add_argument(
+    "--wandb-name",
+    default=None,
+    help="Run name. Defaults to an auto-generated name from the run config.",
+  )
   # Performance objective (5): walkability score, task reward, or AMP alignment.
   p.add_argument("--objective", choices=["reward", "amp", "walk"], default="walk")
   p.add_argument(
@@ -1414,6 +1505,16 @@ def main() -> None:
       + " -> capacity term is total actuator mass (kg)."
     )
 
+  if args.wandb:
+    import wandb
+
+    run_name = args.wandb_name or (
+      f"{args.robot}_{'mo' if args.multiobjective else 'so'}"
+      f"_types{args.max_motor_types}_{args.cost_model}"
+      f"_pop{args.pop_size}_gen{args.generations}"
+    )
+    wandb.init(project=args.wandb_project, name=run_name, config=vars(args))
+
   # Build the performance metric (objective 5).
   metric: PerformanceMetric
   if args.objective == "amp":
@@ -1453,6 +1554,7 @@ def main() -> None:
     device=args.device,
   )
 
+  exit_code = 0
   try:
     if args.multiobjective:
       result = run_optimization(
@@ -1490,9 +1592,36 @@ def main() -> None:
         seed_genome=WALK_SEED_GENOME if args.objective == "walk" else None,
       )
       report_pareto(result, cfg, args.out)
+
+    if args.wandb:
+      try:
+        import wandb
+
+        f = result.F if result.F.ndim == 2 else result.F.reshape(-1, 1)
+        if f.shape[1] == 2:
+          table = wandb.Table(
+            columns=["reward", "cost"],
+            data=[[float(-row[0]), float(row[1])] for row in f],
+          )
+          wandb.log({"final_pareto_front": table})
+        wandb.finish()
+      except Exception as exc:  # noqa: BLE001
+        print(f"[wandb] final logging failed (non-fatal): {exc!r}")
+  except Exception:  # noqa: BLE001
+    import traceback
+
+    traceback.print_exc()
+    exit_code = 1
   finally:
     if simulation_app is not None:
-      simulation_app.close()
+      # Isaac Sim's simulation_app.close() reliably hangs in a shutdown spin-loop
+      # (_app_control_on_stop_handle_fn -> render -> cuda.set_device). All results
+      # (npz) and wandb are already flushed above, so bypass the broken teardown
+      # and hard-exit so a sweep loop can advance to the next run.
+      # ponytail: os._exit skips atexit/Isaac cleanup; safe, outputs already persisted
+      sys.stdout.flush()
+      sys.stderr.flush()
+      os._exit(exit_code)
 
 
 if __name__ == "__main__":

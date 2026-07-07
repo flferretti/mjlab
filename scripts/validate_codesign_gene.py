@@ -20,6 +20,7 @@ result matches what the GA optimized.
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -104,16 +105,23 @@ def plot_pareto(
 
   fig, ax = plt.subplots(figsize=(7, 5))
   ax.plot(
-    costs[eff], rewards[eff], "-", color="tab:green", lw=2, zorder=1,
+    costs[eff],
+    rewards[eff],
+    "-",
+    color="tab:green",
+    lw=2,
+    zorder=1,
     label="Pareto frontier",
   )
   dom = np.where(dominated)[0]
   if len(dom):
-    ax.scatter(
-      costs[dom], rewards[dom], c="0.6", s=45, zorder=2, label="dominated"
-    )
+    ax.scatter(costs[dom], rewards[dom], c="0.6", s=45, zorder=2, label="dominated")
   ax.scatter(
-    costs[~dominated], rewards[~dominated], c="tab:blue", s=70, zorder=3,
+    costs[~dominated],
+    rewards[~dominated],
+    c="tab:blue",
+    s=70,
+    zorder=3,
     label="Pareto designs",
   )
   ax.scatter(
@@ -255,6 +263,15 @@ def validate_in_isaac(
     backend.env.close()
     return metrics
   finally:
+    # Isaac's simulation_app.close() can hang in a shutdown spin-loop
+    # (_app_control_on_stop_handle_fn -> render -> cuda.set_device). Metrics are
+    # already written to JSON above, so hard-exit to avoid blocking a batch of
+    # sequential validations.
+    # ponytail: os._exit skips Isaac cleanup; metrics_json already persisted
+    if metrics_json is not None and metrics_json.exists():
+      sys.stdout.flush()
+      sys.stderr.flush()
+      os._exit(0)
     simulation_app.close()
 
 
@@ -262,7 +279,9 @@ def main() -> int:
   p = argparse.ArgumentParser(description=__doc__)
   p.add_argument("--pareto", required=True, help="npz from codesign_ga.py (gene).")
   p.add_argument(
-    "--policy", default=None, help="ONNX/TorchScript policy (needed unless --plot-only)."
+    "--policy",
+    default=None,
+    help="ONNX/TorchScript policy (needed unless --plot-only).",
   )
   p.add_argument("--task", default=GENE_TASK_DEFAULT)
   p.add_argument(
@@ -297,10 +316,10 @@ def main() -> int:
   F, X, _groups = load_pareto_set(args.pareto)
   F = np.atleast_2d(F)
   X = np.atleast_1d(X)
-  selected_idx = select_design(
-    F, args.criteria, args.efficiency_min_reward_fraction
+  selected_idx = select_design(F, args.criteria, args.efficiency_min_reward_fraction)
+  genome = (
+    X[selected_idx] if isinstance(X[selected_idx], dict) else dict(X[selected_idx])
   )
-  genome = X[selected_idx] if isinstance(X[selected_idx], dict) else dict(X[selected_idx])
   tau_vec, n_choices, cum_tau = decode_individual(genome, cfg)
   design = {
     g.name: round(float(tau_vec[cfg.joint_order.index(g.joints[0])]), 1)
