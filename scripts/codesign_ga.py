@@ -189,6 +189,17 @@ class CodesignConfig:
   anchored kg/Nm constant (numerically almost identical), while ``powerlaw`` /
   ``catalog`` capture the sub-linear mass-vs-torque scaling of real BLDC/QDD units.
   """
+  rms_peak_ratio: float = 0.25
+  """Thermal actuator-sizing limit: per-joint RMS torque must stay <=
+  ``rms_peak_ratio`` * peak torque (a motor's continuous rating is ~1/4 its peak
+  for BLDC/QDD). Measured from the rollout torque trace and enforced as a hard
+  inequality constraint (multiobjective) or a strong penalty (single-objective).
+  Set <= 0 to disable.
+  """
+  w_rms_penalty: float = 50.0
+  """Single-objective penalty per Nm of RMS-over-limit (summed over joints).
+  Strong, mirroring ``w_motor_type_penalty``, so RMS-violating designs are
+  dominated regardless of their reward advantage."""
 
   def capacity_cost(self, tau_per_joint: np.ndarray, cum_tau: float) -> float:
     """Normalized hardware-capacity cost term (dimensionless).
@@ -620,6 +631,10 @@ class CodesignBackend(abc.ABC):
     self.rollout_steps = rollout_steps
     self.metric = metric
     self._tau_full: torch.Tensor | None = None
+    # Per-design RMS torque (L, n_joints), set by the last evaluate() call; None
+    # if this backend cannot report applied torque (constraint then skipped).
+    self.last_rms_LJ: np.ndarray | None = None
+    self._rollout_rms: torch.Tensor | None = None
 
   @abc.abstractmethod
   def _reset(self) -> dict: ...
@@ -643,6 +658,14 @@ class CodesignBackend(abc.ABC):
   @abc.abstractmethod
   def action_dim(self) -> int:
     """Total action dimension (for the random smoke-test policy)."""
+
+  def _applied_torque_LJ(self) -> torch.Tensor | None:
+    """Applied joint torque (num_envs, n_actuated_joints) in ``joint_order``.
+
+    Returns None if the backend cannot report per-joint torque (the RMS
+    thermal constraint is then skipped for that backend).
+    """
+    return None
 
   def _amp_obs(self, obs: dict) -> torch.Tensor | None:
     """AMP observation group (used by AmpAlignmentMetric); None if unavailable."""
@@ -672,6 +695,14 @@ class CodesignBackend(abc.ABC):
 
     mean_reward = self._rollout()  # (num_envs,)
     per_design = mean_reward[:need].view(L, n_seeds).mean(dim=1)
+
+    # Per-joint RMS torque over the rollout, averaged across seeds (L, n_joints).
+    if self._rollout_rms is not None:
+      rms = self._rollout_rms[:need].view(L, n_seeds, -1).mean(dim=1)
+      self.last_rms_LJ = rms.detach().cpu().numpy()
+    else:
+      self.last_rms_LJ = None
+
     return per_design.detach().cpu().numpy()
 
   @torch.no_grad()
@@ -684,12 +715,22 @@ class CodesignBackend(abc.ABC):
     self._write_tau(self._tau_full)  # reset events may touch limits; re-assert.
 
     self.metric.reset(self.num_envs, self.device)
+    tau_sq_sum: torch.Tensor | None = None
+    n_tau_steps = 0
     for _ in range(self.rollout_steps):
       actions = self._policy(self._actor_obs(obs))
       obs, reward = self._step(actions)
       self.metric.update(self, obs, reward)
+      tau = self._applied_torque_LJ()  # (num_envs, n_joints) or None
+      if tau is not None:
+        tau_sq = tau.detach() ** 2
+        tau_sq_sum = tau_sq if tau_sq_sum is None else tau_sq_sum + tau_sq
+        n_tau_steps += 1
       # Re-assert each step so any auto-reset on termination keeps the design.
       self._write_tau(self._tau_full)
+    self._rollout_rms = (
+      torch.sqrt(tau_sq_sum / max(n_tau_steps, 1)) if tau_sq_sum is not None else None
+    )
     return self.metric.result()
 
 
@@ -764,6 +805,9 @@ class MjlabBackend(CodesignBackend):
 
     self._set_tau = set_motor_tau_max
     self._env_ids = torch.arange(num_envs, device=device)
+    # Joint ids into qfrc_actuator matching ``joint_order`` (for RMS torque).
+    robot = self.env.unwrapped.scene["robot"]
+    self._tau_joint_ids, _ = robot.find_joints(list(joint_order), preserve_order=True)
 
   def action_dim(self) -> int:
     return self.env.unwrapped.action_manager.total_action_dim
@@ -785,6 +829,10 @@ class MjlabBackend(CodesignBackend):
   def _root_height(self) -> torch.Tensor:
     robot = self.env.unwrapped.scene["robot"]
     return robot.data.root_link_pos_w[:, 2]
+
+  def _applied_torque_LJ(self) -> torch.Tensor | None:
+    robot = self.env.unwrapped.scene["robot"]
+    return robot.data.qfrc_actuator[:, self._tau_joint_ids]
 
   def _write_tau(self, tau_full: torch.Tensor) -> None:
     self._set_tau(
@@ -868,6 +916,9 @@ class IsaacLabBackend(CodesignBackend):
       "robot", joint_names=list(joint_order), preserve_order=True
     )
     self._env_ids = torch.arange(num_envs, device=device)
+    # Joint ids into applied_torque matching ``joint_order`` (for RMS torque).
+    robot = self.env.unwrapped.scene["robot"]
+    self._tau_joint_ids, _ = robot.find_joints(list(joint_order), preserve_order=True)
 
   def action_dim(self) -> int:
     return int(self.env.unwrapped.action_manager.total_action_dim)
@@ -889,6 +940,10 @@ class IsaacLabBackend(CodesignBackend):
   def _root_height(self) -> torch.Tensor:
     robot = self.env.unwrapped.scene["robot"]
     return robot.data.root_link_pos_w[:, 2]
+
+  def _applied_torque_LJ(self) -> torch.Tensor | None:
+    robot = self.env.unwrapped.scene["robot"]
+    return robot.data.applied_torque[:, self._tau_joint_ids]
 
   def _write_tau(self, tau_full: torch.Tensor) -> None:
     self._set_tau(
@@ -1018,12 +1073,16 @@ def _make_problem(
 
   class CodesignProblem(Problem):
     def __init__(self) -> None:
+      # RMS thermal constraint adds one inequality (per-design worst-joint
+      # RMS-over-limit) when enabled.
+      rms_active = cfg.rms_peak_ratio > 0.0
       if multiobjective:
         # True bi-objective front: minimize (-performance, actuator mass). NSGA-II
         # returns the whole non-dominated set in ONE run (no w_torque scalarization
         # or sweep). The motor-diversity limit is a hard inequality constraint so
-        # designs are pushed toward <= max_motor_types distinct actuators.
-        super().__init__(vars=variables, n_obj=2, n_ieq_constr=1)
+        # designs are pushed toward <= max_motor_types distinct actuators; the RMS
+        # limit (RMS <= rms_peak_ratio * peak torque) is a second hard constraint.
+        super().__init__(vars=variables, n_obj=2, n_ieq_constr=1 + int(rms_active))
       else:
         # Single scalarized objective: performance - cost
         # Increasing w_count/w_torque directly prefers cheaper designs
@@ -1043,25 +1102,37 @@ def _make_problem(
         np.stack(tau_rows), dtype=torch.float32, device=backend.device
       )
       performance = backend.evaluate(tau_LJ, n_seeds)  # (L,)
+      rms_active = cfg.rms_peak_ratio > 0.0
+      rms_LJ = backend.last_rms_LJ  # (L, n_joints) Nm, or None if unavailable
+
+      def _rms_overload(i: int, tau_vec: np.ndarray) -> float:
+        """Worst-joint RMS-over-limit in Nm (>0 = thermal violation)."""
+        if not rms_active or rms_LJ is None:
+          return 0.0
+        return float(np.max(rms_LJ[i] - cfg.rms_peak_ratio * tau_vec))
 
       if multiobjective:
         # Objective 1: -reward (minimized). Objective 2: total actuator mass/cost.
-        # Constraint: n_types - max_motor_types <= 0.
+        # Constraint 1: n_types - max_motor_types <= 0.
+        # Constraint 2 (if enabled): worst-joint (RMS - ratio*peak) <= 0.
         f_rows, g_rows = [], []
-        for perf, tau_vec, (_n_choices, cum_tau), n_types in zip(
-          performance, tau_rows, costs, n_motor_types, strict=True
+        for i, (perf, tau_vec, (_n_choices, cum_tau), n_types) in enumerate(
+          zip(performance, tau_rows, costs, n_motor_types, strict=True)
         ):
           mass_cost = cfg.capacity_cost(tau_vec, cum_tau)
           f_rows.append([-float(perf), float(mass_cost)])
-          g_rows.append([float(n_types) - float(max_motor_types)])
+          g = [float(n_types) - float(max_motor_types)]
+          if rms_active:
+            g.append(_rms_overload(i, tau_vec))
+          g_rows.append(g)
         out["F"] = np.array(f_rows, dtype=np.float64)
         out["G"] = np.array(g_rows, dtype=np.float64)
         return
 
       # Scalarized objective: maximize performance minus hardware cost
       f_obj = []
-      for perf, tau_vec, (n_choices, cum_tau), n_types in zip(
-        performance, tau_rows, costs, n_motor_types, strict=True
+      for i, (perf, tau_vec, (n_choices, cum_tau), n_types) in enumerate(
+        zip(performance, tau_rows, costs, n_motor_types, strict=True)
       ):
         # Base cost: diversity (number of unique motor models) + total capacity.
         # ``capacity_cost`` uses the physical mass model when configured, else the
@@ -1075,7 +1146,11 @@ def _make_problem(
         # E.g., if reward ranges ~0.05-0.1 and cost ~5-15, penalty must be ~10+ to
         # make "4 types" designs worse than "3 types" designs.
         excess_penalty = max(0.0, float(n_types - 3)) * cfg.w_motor_type_penalty
-        total_cost = base_cost + excess_penalty
+
+        # STRONG thermal penalty: each Nm of RMS-over-limit costs w_rms_penalty,
+        # so a design whose motors would thermally overload is dominated.
+        rms_penalty = cfg.w_rms_penalty * max(0.0, _rms_overload(i, tau_vec))
+        total_cost = base_cost + excess_penalty + rms_penalty
 
         # Fitness: higher performance is better, lower cost is better
         # Minimize: -performance + cost
@@ -1398,6 +1473,15 @@ def main() -> None:
     help="Power-law exponent for --cost-model powerlaw (0.7-0.8 for BLDC/QDD).",
   )
   p.add_argument(
+    "--rms-peak-ratio",
+    type=float,
+    default=0.25,
+    help="Thermal actuator-sizing limit: per-joint RMS torque (from the rollout) "
+    "must stay <= this fraction of the joint's peak torque (~0.25 = continuous "
+    "rating of a BLDC/QDD motor). Enforced as a hard constraint (--multiobjective) "
+    "or a strong penalty (single-objective). Set to 0 to disable.",
+  )
+  p.add_argument(
     "--w-torque-sweep",
     default=None,
     help="Comma-separated list of w_torque values (e.g. '0.25,0.5,1,2,4,8'). "
@@ -1497,7 +1581,14 @@ def main() -> None:
     w_count=args.w_count,
     w_torque=args.w_torque,
     cost_model=cost_model,
+    rms_peak_ratio=args.rms_peak_ratio,
   )
+  if args.rms_peak_ratio > 0:
+    print(
+      f"[Config] RMS thermal constraint ON: RMS torque <= "
+      f"{args.rms_peak_ratio:.2f} * peak torque per joint "
+      f"({'hard constraint' if args.multiobjective else 'strong penalty'})."
+    )
   if cost_model is not None:
     print(
       f"[Config] cost-model={args.cost_model}"
