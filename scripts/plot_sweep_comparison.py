@@ -73,7 +73,7 @@ def main() -> int:
 
   runs = {}
   for path in npzs:
-    tag = path.stem.replace("gene62000_", "")
+    tag = path.stem.replace("gene62000rms_", "").replace("gene62000_", "")
     runs[tag] = load_run(path)
 
   fig, (ax_f, ax_e) = plt.subplots(1, 2, figsize=(15, 6))
