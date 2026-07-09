@@ -844,6 +844,28 @@ class MjlabBackend(CodesignBackend):
     )
 
 
+def _clamp_stairs_step_height(env_cfg, max_step_height: float) -> None:
+  """Clamp every stairs subterrain's step_height_range to <= max_step_height (m).
+
+  No-op for flat envs (terrain_generator is None) or subterrains without a
+  ``step_height_range`` field. Also disables terrain curriculum so difficulty
+  can't scale the steps back above the cap.
+  """
+  gen = getattr(
+    getattr(getattr(env_cfg, "scene", None), "terrain", None), "terrain_generator", None
+  )
+  if gen is None:
+    return
+  for sub in gen.sub_terrains.values():
+    rng = getattr(sub, "step_height_range", None)
+    if rng is not None:
+      sub.step_height_range = (
+        min(rng[0], max_step_height),
+        min(rng[1], max_step_height),
+      )
+  gen.curriculum = False
+
+
 class IsaacLabBackend(CodesignBackend):
   """Isaac Lab backend.
 
@@ -864,6 +886,7 @@ class IsaacLabBackend(CodesignBackend):
     rollout_steps: int,
     metric: PerformanceMetric,
     device: str = "cuda:0",
+    max_step_height: float | None = None,
   ) -> None:
     super().__init__(rollout_steps, metric)
     import gymnasium as gym
@@ -878,6 +901,10 @@ class IsaacLabBackend(CodesignBackend):
     # Disable training-time torque randomization (configclass attr, not a dict).
     if hasattr(env_cfg.events, "randomize_motor_tau_max"):
       env_cfg.events.randomize_motor_tau_max = None
+    # Cap the stairs step height so the RMS/torque demand reflects the real
+    # deployment envelope (e.g. 0.10 m) rather than the training max (0.23 m).
+    if max_step_height is not None:
+      _clamp_stairs_step_height(env_cfg, max_step_height)
     # Evaluate every design under the same fixed forward-walking command so the
     # reward score reflects the design, not the sampled command.
     cmd = getattr(getattr(env_cfg, "commands", None), "base_velocity", None)
@@ -1473,6 +1500,14 @@ def main() -> None:
     help="Power-law exponent for --cost-model powerlaw (0.7-0.8 for BLDC/QDD).",
   )
   p.add_argument(
+    "--max-step-height",
+    type=float,
+    default=None,
+    help="Cap the eval stairs terrain step height (m), e.g. 0.10, so the RMS/"
+    "torque demand reflects the real deployment envelope instead of the training "
+    "max (0.23 m). IsaacLab backend only; disables terrain curriculum.",
+  )
+  p.add_argument(
     "--rms-peak-ratio",
     type=float,
     default=0.25,
@@ -1633,8 +1668,7 @@ def main() -> None:
     import gb_rl_locomotion.networks  # type: ignore # noqa: F401
     import gb_rl_locomotion.tasks  # type: ignore # noqa: F401  (registers gym tasks)
 
-  backend = build_backend(
-    args.backend,
+  backend_kwargs = dict(
     task=args.task,
     policy_path=args.policy,
     num_envs=num_envs,
@@ -1644,6 +1678,9 @@ def main() -> None:
     metric=metric,
     device=args.device,
   )
+  if args.backend == "isaaclab":
+    backend_kwargs["max_step_height"] = args.max_step_height
+  backend = build_backend(args.backend, **backend_kwargs)
 
   exit_code = 0
   try:
