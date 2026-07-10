@@ -508,12 +508,26 @@ class OnnxPolicy(torch.nn.Module):
     self._output_name = self._sess.get_outputs()[0].name
     self._input_shape = self._sess.get_inputs()[0].shape
 
+    # Some exported policies (e.g. BeyondMimic tracking) declare extra inputs
+    # beyond the observation — most commonly a scalar ``time_step`` that only
+    # drives auxiliary reference-motion outputs, NOT the action. onnxruntime
+    # still requires every declared input, so feed zeros for the non-obs ones.
+    self._extra_inputs = [
+      (inp.name, [d if isinstance(d, int) and d > 0 else 1 for d in inp.shape])
+      for inp in self._sess.get_inputs()[1:]
+    ]
+
     # ONNX expects [1, onnx_obs_dim], mjlab provides [batch, 168]
     # Extract expected obs dimension from ONNX model
     self._onnx_obs_dim = int(self._input_shape[1])
     print(
       f"[OnnxPolicy] Loaded {onnx_path}: expects obs_dim={self._onnx_obs_dim}, "
       f"batch_size={self._input_shape[0]}"
+      + (
+        f", extra_inputs={[n for n, _ in self._extra_inputs]}"
+        if self._extra_inputs
+        else ""
+      )
     )
 
   def _adapt_obs(self, obs: torch.Tensor) -> np.ndarray:
@@ -556,7 +570,10 @@ class OnnxPolicy(torch.nn.Module):
     actions_list = []
     for i in range(batch_size):
       obs_single = obs_adapted[i : i + 1]  # (1, obs_dim)
-      action = self._sess.run([self._output_name], {self._input_name: obs_single})[0]
+      feed = {self._input_name: obs_single}
+      for name, shape in self._extra_inputs:
+        feed[name] = np.zeros(shape, dtype=np.float32)
+      action = self._sess.run([self._output_name], feed)[0]
       actions_list.append(action[0])  # Remove batch dim
 
     actions_np = np.stack(actions_list, axis=0)
