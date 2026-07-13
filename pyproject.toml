@@ -66,6 +66,10 @@ demo = "mjlab.scripts.demo:main"
 list-envs = "mjlab.scripts.list_envs:main"
 viz-nan = "mjlab.scripts.nan_viz:main"
 export-scene = "mjlab.scripts.export_scene:main"
+wm-collect = "mjlab.scripts.wm_collect:main"
+wm-train = "mjlab.scripts.wm_train:main"
+wm-eval = "mjlab.scripts.wm_eval:main"
+wm-codesign = "mjlab.scripts.wm_codesign:main"
 
 [dependency-groups]
 dev = [

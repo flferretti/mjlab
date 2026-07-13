@@ -31,6 +31,7 @@ import os
 import sys
 from collections import Counter
 from dataclasses import asdict, dataclass
+from typing import cast
 
 import numpy as np
 import torch
@@ -1086,9 +1087,41 @@ def build_backend(name: str, **kwargs) -> CodesignBackend:
     return IsaacLabBackend(**kwargs)
   if name == "sim2sim":
     return Sim2SimBackend(**kwargs)
+  if name == "wm":
+    return _build_wm_backend(**kwargs)
   raise ValueError(
-    f"Unknown backend '{name}' (expected 'mjlab', 'isaaclab', or 'sim2sim')."
+    f"Unknown backend '{name}' (expected 'mjlab', 'isaaclab', 'sim2sim', or 'wm')."
   )
+
+
+def _build_wm_backend(
+  wm_checkpoint: str | None = None,
+  wm_verify_topk: float = 0.25,
+  **kwargs,
+) -> CodesignBackend:
+  """World-model surrogate backend (mjlab.world_model), duck-typed to
+  CodesignBackend. With ``wm_verify_topk > 0`` an MjlabBackend is built as the
+  true-sim verifier for the top/uncertain slice of each generation. The final
+  reported front must be re-evaluated in true sim (rerun with --backend mjlab
+  on the winning designs)."""
+  from mjlab.world_model import WorldModelBackend, WorldModelBackendCfg
+
+  if wm_checkpoint is None:
+    raise ValueError("--wm-checkpoint is required with --backend wm.")
+  verifier = MjlabBackend(**kwargs) if wm_verify_topk > 0.0 else None
+  backend = WorldModelBackend.from_checkpoint(
+    checkpoint=wm_checkpoint,
+    task=kwargs["task"],
+    policy_path=kwargs["policy_path"],
+    joint_order=kwargs["joint_order"],
+    rollout_steps=kwargs["rollout_steps"],
+    device=kwargs["device"],
+    metric=kwargs["metric"],
+    verifier=verifier,
+    cfg=WorldModelBackendCfg(verify_topk=wm_verify_topk),
+    num_envs=kwargs["num_envs"],
+  )
+  return cast(CodesignBackend, backend)
 
 
 # ---------------------------------------------------------------------------
@@ -1473,7 +1506,22 @@ def run_w_torque_sweep(
 
 def main() -> None:
   p = argparse.ArgumentParser(description=__doc__)
-  p.add_argument("--backend", choices=["mjlab", "isaaclab", "sim2sim"], default="mjlab")
+  p.add_argument(
+    "--backend", choices=["mjlab", "isaaclab", "sim2sim", "wm"], default="mjlab"
+  )
+  p.add_argument(
+    "--wm-checkpoint",
+    default=None,
+    help="Trained world-model checkpoint (wm-train output) for --backend wm.",
+  )
+  p.add_argument(
+    "--wm-verify-topk",
+    type=float,
+    default=0.25,
+    help="Fraction of each generation re-scored in true sim (mjlab backend) "
+    "when using --backend wm; high-uncertainty designs are verified too. "
+    "0 disables verification (pure surrogate).",
+  )
   p.add_argument(
     "--robot",
     choices=["qdd", "gene"],
@@ -1609,6 +1657,14 @@ def main() -> None:
   if args.task is None:
     args.task = default_task
 
+  if args.backend == "wm" and args.objective != "reward":
+    # The world model's reward head predicts task reward; walk/amp metrics
+    # need a live simulator rollout.
+    print(
+      f"[Config] backend=wm: objective '{args.objective}' unsupported; using 'reward'."
+    )
+    args.objective = "reward"
+
   if args.objective == "walk" and args.backend != "sim2sim":
     print("[Config] Switching to sim2sim backend for walk objective.")
     args.backend = "sim2sim"
@@ -1697,6 +1753,9 @@ def main() -> None:
   )
   if args.backend == "isaaclab":
     backend_kwargs["max_step_height"] = args.max_step_height
+  if args.backend == "wm":
+    backend_kwargs["wm_checkpoint"] = args.wm_checkpoint
+    backend_kwargs["wm_verify_topk"] = args.wm_verify_topk
   backend = build_backend(args.backend, **backend_kwargs)
 
   exit_code = 0

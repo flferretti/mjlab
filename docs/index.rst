@@ -81,6 +81,7 @@ Table of Contents
    source/viewers
    source/training/distributed_training
    source/training/cloud
+   source/world_model_codesign
    source/debugging/nan_guard
    source/debugging/export_scene
 

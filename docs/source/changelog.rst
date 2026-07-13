@@ -8,6 +8,18 @@ Upcoming version (not yet released)
 Added
 ^^^^^
 
+- Added ``mjlab.world_model``: a contact-enhanced, design-conditioned latent
+  world model that trains once on design-randomized simulation data (every
+  env carries a different actuator design) and then evaluates candidate
+  designs in imagination — including per-joint RMS torque for the co-design
+  GA's thermal constraint. New CLI commands ``wm-collect``, ``wm-train``,
+  ``wm-eval``, and ``wm-codesign``; ``scripts/codesign_ga.py`` gains a
+  ``--backend wm`` surrogate backend with uncertainty-triggered true-sim
+  verification. See :doc:`world_model_codesign`.
+- Added ``Mjlab-Velocity-Flat-Unitree-Go1-MotorCond``, a motor-conditioned
+  Go1 flat-velocity task (per-joint-type ``tau_max`` randomized at reset,
+  ideal-PD actuators so torque limits vary per environment) for the public
+  reproducibility track of the world-model co-design work.
 - Added ``--log-root`` CLI option to ``train``, ``play``, and ``evaluate``
   scripts for choosing where training logs are stored. Defaults to
   ``logs/rsl_rl`` (unchanged behavior). Useful for directing outputs to a
