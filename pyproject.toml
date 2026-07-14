@@ -38,7 +38,7 @@ dependencies = [
   "torchrunx>=0.3.4",
   "warp-lang>=1.12.0",
   "mujoco-warp>=3.8.0",
-  "mujoco>=3.8.0,<3.9",
+  "mujoco>=3.9.0,<3.10",
   "trimesh>=4.8.3",
   "viser>=1.0.26",
   "mjviser>=0.0.11",
@@ -106,8 +106,8 @@ conflicts = [
   [{extra = "cu128"}, {extra = "cpu"}],
 ]
 # The nightly index (py.mujoco.org) only has dev builds, and we keep Mujoco
-# constrained to the Warp-compatible 3.7 series.
-override-dependencies = ["mujoco<3.9"]
+# constrained to the Warp-compatible 3.9 series.
+override-dependencies = ["mujoco<3.10"]
 constraint-dependencies = [
   "GitPython>=3.1.47",
   "lxml>=6.1.0",
@@ -146,7 +146,7 @@ torch = [
   { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform != 'darwin'" },
 ]
 mujoco = { index = "mujoco" }
-mujoco-warp = { git = "https://github.com/google-deepmind/mujoco_warp", rev = "9edb8e09a6ea859a99232e154899ac0198910216" }
+mujoco-warp = { git = "https://github.com/google-deepmind/mujoco_warp", rev = "9f44c27da39dfb3f9988dcadd2f1a4527f747035" }
 amp-rsl-rl = { git = "https://github.com/gbionics/amp-rsl-rl" }
 gb-motion-prior-lupin = { git = "ssh://git@github.com/gbionics/gb-motion-prior-lupin" }
 

@@ -44,6 +44,12 @@ Added
 Changed
 ^^^^^^^
 
+- Bumped ``mujoco`` from the 3.8.x nightly line to 3.9.0 and ``mujoco-warp``
+  from v3.8.1 to v3.9.0.1 (the 3.8.x nightly builds have since been pruned
+  from ``py.mujoco.org``, breaking ``uv sync``). ``mjENBL_MULTICCD`` no
+  longer exists in MuJoCo's ``mjtEnableBit`` enum as of 3.9; the one internal
+  test exercising it now uses ``mjENBL_ENERGY`` instead (the flag was only
+  used as a generic plumbing example, not by any task).
 - Co-design GA now defaults to a walkability score objective instead of raw
   task reward. Use ``--objective reward`` to restore the old fitness, or
   ``--objective amp`` for discriminator-based alignment.
@@ -95,6 +101,12 @@ Changed
 Fixed
 ^^^^^
 
+- Fixed ``CameraSensor`` segmentation output: ``mujoco_warp`` packs each pixel
+  as a ``(object_id, object_type)`` pair, but ``SensorContext.get_segmentation``
+  was reading the buffer as if it held one scalar per pixel, silently keeping
+  an extra trailing axis and corrupting the returned shape/values. It now
+  correctly decodes the pair into the documented contract (geom id, ``-1``
+  for background, ``-2`` for flex hits).
 - Added a backward-compatibility import alias for the common typo
   ``mjlab.trasks`` → ``mjlab.tasks`` so callable paths in old configs can
   still resolve (e.g. ``...track_lin_vel_xy_exp``).

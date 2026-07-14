@@ -15,6 +15,12 @@ if TYPE_CHECKING:
   from mjlab.sensor.camera_sensor import CameraSensor
   from mjlab.sensor.raycast_sensor import RayCastSensor
 
+# mujoco_warp segmentation object-type codes (mjtObj), used to collapse its
+# (object_id, object_type) pairs into mjlab's single-scalar segmentation
+# contract (see SensorContext.get_segmentation).
+_MJOBJ_GEOM = int(mujoco.mjtObj.mjOBJ_GEOM)
+_MJOBJ_FLEX = int(mujoco.mjtObj.mjOBJ_FLEX)
+
 
 @wp.kernel
 def _unpack_rgb_kernel(
@@ -222,8 +228,17 @@ class SensorContext:
     num_pixels = w * h
     nworld = self._data.nworld
 
-    cam_data = self._seg_torch[:, seg_adr : seg_adr + num_pixels]
-    return cam_data.view(nworld, h, w, 1)
+    # mujoco_warp packs each pixel as a (object_id, object_type) vec2i pair, so
+    # wp.to_torch exposes an extra trailing axis of size 2. Collapse it down to
+    # the single-scalar contract documented above.
+    cam_data = self._seg_torch[:, seg_adr : seg_adr + num_pixels, :]
+    object_id, object_type = cam_data[..., 0], cam_data[..., 1]
+    seg = torch.where(
+      object_type == _MJOBJ_GEOM,
+      object_id,
+      torch.where(object_type == _MJOBJ_FLEX, -2, -1).to(object_id.dtype),
+    ).to(torch.int32)
+    return seg.view(nworld, h, w, 1)
 
   # Private methods.
 
