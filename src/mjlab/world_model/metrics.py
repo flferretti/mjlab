@@ -81,6 +81,7 @@ def hypervolume_ratio(
     both = np.concatenate([front, reference_front], axis=0)
     span = both.max(axis=0) - both.min(axis=0)
     ref_point = both.max(axis=0) + 0.05 * np.where(span > 0, span, 1.0)
+  assert ref_point is not None
   hv_ref = hypervolume(reference_front, ref_point)
   if hv_ref == 0.0:
     raise ValueError("Reference front has zero hypervolume at the ref point.")
